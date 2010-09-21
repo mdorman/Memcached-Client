@@ -1,0 +1,3 @@
+.build/
+Memcached-Client-*
+t/*.log
