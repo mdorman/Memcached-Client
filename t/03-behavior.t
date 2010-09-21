@@ -5,7 +5,7 @@ use Memcached::Client::Log qw{DEBUG INFO};
 use t::Memcached::Manager qw{};
 use t::Memcached::Mock qw{};
 use t::Memcached::Servers qw{};
-use Test::Most 'bail';
+use Test::More;
 
 my @tests = (['version',
               'Checking for version on all servers'],
