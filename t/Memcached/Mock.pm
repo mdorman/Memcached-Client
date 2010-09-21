@@ -1,0 +1,216 @@
+package t::Memcached::Mock;
+
+use strict;
+use warnings;
+use Memcached::Client::Log;
+use Module::Load;
+
+sub new {
+    my ($class, @args) = @_;
+    my %args = 1 == scalar @args ? %{$args[0]} : @args;
+    my $self = bless {}, $class;
+    $self->{hash_namespace} = $args{hash_namespace} || 1;
+    $self->{namespace} = $args{namespace} || "";
+    $self->{selector} = __class_loader (Selector => $args{selector} || 'Traditional')->new;
+    $self->{selector}->set_servers ($args{servers});
+    $self->{version} = $args{version};
+    map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
+    DEBUG "Mock cluster is %s", $self;
+    $self;
+}
+
+# This manages class loading for the sub-classes
+sub __class_loader {
+    my ($prefix, $class) = @_;
+    # Add our prefixes if the class name isn't called out as absolute
+    $class = join ('::', 'Memcached::Client', $prefix, $class) if ($class !~ s/^\+//);
+    # Sanitize our class name
+    $class =~ s/[^\w:_]//g;
+    load $class;
+    $class;
+}
+
+sub add {
+    my ($self, $key, $value) = @_;
+    return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " ") and defined $value);
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return 0 unless (defined $self->{servers}->{$server});
+    DEBUG "M: add: %s - %s - %s", $server, $index, $value;
+    return 0 if (defined $self->{servers}->{$server}->{$index});
+    $self->{servers}->{$server}->{$index} = $value;
+    return 1;
+}
+
+sub add_multi {
+    my ($self, $tuples) = @_;
+    my (%rv);
+    for my $tuple (@{$tuples}) {
+        my ($key, $value) = @{$tuple};
+        $rv{$key} = $self->add ($key, $value);
+    }
+    return \%rv;
+}
+
+sub append {
+    my ($self, $key, $value) = @_;
+    return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " ") and defined $value);
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return 0 unless (defined $self->{servers}->{$server});
+    DEBUG "M: append: %s - %s - %s", $server, $index, $value;
+    return 0 unless (defined $self->{servers}->{$server}->{$index});
+    $self->{servers}->{$server}->{$index} .= $value;
+    return 1;
+}
+
+sub decr {
+    my ($self, $key, $value) = @_;
+    $value //= 1;
+    return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return unless (defined $self->{servers}->{$server});
+    DEBUG "M: decr: %s - %s - %s", $server, $index, $value;
+    return unless (defined $self->{servers}->{$server}->{$index});
+    $value = $self->{servers}->{$server}->{$index} if ($value > $self->{servers}->{$server}->{$index});
+    $self->{servers}->{$server}->{$index} -= $value;
+    return $self->{servers}->{$server}->{$index};
+}
+
+sub delete {
+    my ($self, $key) = @_;
+    return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return 0 unless (defined $self->{servers}->{$server});
+    DEBUG "M: delete: %s - %s", $server, $index;
+    return 0 unless (defined $self->{servers}->{$server}->{$index});
+    delete $self->{servers}->{$server}->{$index};
+    return 1;
+}
+
+sub error {
+    my ($self, $server) = @_;
+    delete $self->{servers}->{$server};
+    # $self->{servers}->{$server} = undef;
+    DEBUG "Deleted %s, result %s", $server, $self;
+    return 1;
+}
+
+sub flush_all {
+    my ($self) = @_;
+    map {
+        DEBUG "M: flush_all: %s", $_;
+        $self->{servers}->{$_} = {};
+    } keys %{$self->{servers}};
+    return {map {$_ => 1} keys %{$self->{servers}}};
+}
+
+sub get {
+    my ($self, $key) = @_;
+    return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return unless (defined $self->{servers}->{$server});
+    DEBUG "M: get: %s - %s", $server, $index;
+    return $self->{servers}->{$server}->{$index};
+}
+
+sub get_multi {
+    my ($self, $keys) = @_;
+    return {} unless (defined $keys and ref $keys eq "ARRAY" and @{$keys});
+    my %rv;
+    for my $key (@{$keys}) {
+        next unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+        my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or next;
+        my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+        next unless (defined $self->{servers}->{$server});
+        DEBUG "M: get: %s - %s", $server, $index;
+        next unless (defined $self->{servers}->{$server}->{$index});
+        $rv{ref $key ? $key->[1] : $key} = $self->{servers}->{$server}->{$index};
+    }
+    return \%rv;
+}
+
+sub incr {
+    my ($self, $key, $value) = @_;
+    $value //= 1;
+    return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return unless (defined $self->{servers}->{$server});
+    DEBUG "M: incr: %s - %s - %s", $server, $index, $value;
+    return unless (defined $self->{servers}->{$server}->{$index});
+    $self->{servers}->{$server}->{$index} += $value;
+    return $self->{servers}->{$server}->{$index};
+}
+
+sub namespace {
+    my ($self, $new) = @_;
+    my $ret = $self->{namespace};
+    $self->{namespace} = $new if (defined $new);
+    return $ret;
+}
+
+sub prepend {
+    my ($self, $key, $value) = @_;
+    return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " ") and defined $value);
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return 0 unless (defined $self->{servers}->{$server});
+    DEBUG "M: prepend: %s - %s - %s", $server, $index, $value;
+    return 0 unless (defined $self->{servers}->{$server}->{$index});
+    $self->{servers}->{$server}->{$index} = $value . $self->{servers}->{$server}->{$index};
+    return 1;
+}
+
+sub replace {
+    my ($self, $key, $value) = @_;
+    return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " ") and defined $value);
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return 0 unless (defined $self->{servers}->{$server});
+    DEBUG "M: replace: %s - %s - %s", $server, $index, $value;
+    return 0 unless (defined $self->{servers}->{$server}->{$index});
+    $self->{servers}->{$server}->{$index} = $value;
+    return 1;
+}
+
+sub set {
+    my ($self, $key, $value) = @_;
+    return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " ") and defined $value);
+    my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
+    my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
+    return 0 unless (defined $self->{servers}->{$server});
+    DEBUG "M: set: %s - %s - %s", $server, $index, $value;
+    $self->{servers}->{$server}->{$index} = $value;
+    return 1;
+}
+
+sub set_servers {
+    my ($self, $servers) = @_;
+    $self->{selector}->set_servers ($servers);
+
+    my $serverlist = {map {(ref $_ ? $_->[0] : $_), {}} @{$servers}};
+    for my $server (keys %{$self->{servers} || {}}) {
+        # Skip ones that will continue to exist
+        next if $serverlist->{$server};
+        my $deactivating = delete $self->{servers}->{$server};
+    }
+    for my $server (keys %{$serverlist}) {
+        $self->{servers}->{$server} ||= {};
+    }
+
+    return 1;
+}
+
+sub version {
+    my ($self) = @_;
+    return {map {
+        DEBUG "M: version: %s", $_;
+        $_ => defined $self->{servers}->{$_} ? $self->{version} : undef
+    } keys %{$self->{servers}}};
+}
+
+1;
