@@ -147,7 +147,9 @@ my @tests = (['version',
              ['get_multi', ['bar', 'foo'],
               '->get with all keys set so far']);
 
-if (0 == system (q{memcached -h > /dev/null})) {
+my $memcached = $ENV{MEMCACHED} || 'memcached';
+
+if (0 == system (qq{$memcached -h > /dev/null})) {
     plan tests => (4 * (4 + scalar @tests));
 } else {
     plan skip_all => 'No memcached found';

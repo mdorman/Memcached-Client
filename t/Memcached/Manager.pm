@@ -11,7 +11,7 @@ sub new {
     my ($class, @args) = @_;
     my %args = 1 == scalar @args ? %{$args[0]} : @args;
     my $self = bless {}, $class;
-    $self->{memcached} = $args{memcached} || $ENV{MEMCACHED} || '/usr/bin/memcached';
+    $self->{memcached} = $ENV{MEMCACHED} || 'memcached';
     map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
     # Remove any old logs so they don't confuse things
     unlink for (glob "t/memcached-*.log");
@@ -44,7 +44,7 @@ sub start {
         open STDOUT, ">t/memcached-$port.log" or die ("Couldn't redirect STDOUT");
         open STDERR, '>&STDOUT' or die ("Couldn't redirect STDERR");
 
-        exec $self->{memcached}, "-l", $host, "-p", $port, "-vv";
+        exec "$self->{memcached} -l $host -p $port -vv";
 
         die "Failed to exec: $!";
     } else {
