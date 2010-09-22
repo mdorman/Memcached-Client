@@ -1,2 +1,11 @@
+v0.97
+
+ * Skip functional tests if memcached is not available.
+
+v0.96
 
  * Remove unintended dependency on Test::Most.
+
+v0.95
+
+ * Initial public release.
