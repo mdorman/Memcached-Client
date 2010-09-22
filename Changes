@@ -1,6 +1,7 @@
 v0.98
 
  * Be more consistent in how we invoke memcached in tests.
+ * Allow setting of a preprocessor routine for normalization of keys.
 
 v0.97
 

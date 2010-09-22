@@ -16,6 +16,7 @@ sub __cmd {
         sub {
             my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
             DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
+            $key = $self->__preprocess ($key);
             my $command = __cmd ($name, $key, $flags, $expiration, length $value) . __cmd ($value);
             $handle->push_write ($command);
             $handle->push_read (line => sub {
@@ -39,6 +40,7 @@ sub __cmd {
         return sub {
             my ($self, $handle, $cv, $key, $delta, $initial) = @_;
             DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
+            $key = $self->__preprocess ($key);
             my $command = __cmd ($name, $key, $delta);
             $handle->push_write ($command);
             $handle->push_read (line => sub {
@@ -71,6 +73,7 @@ sub __cmd {
 sub __delete {
     my ($self, $handle, $cv, $key) = @_;
     DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
+    $key = $self->__preprocess ($key);
     my $command = __cmd (delete => $key);
     $handle->push_write ($command);
     #DEBUG "P [%s]: > %s", $handle->{peername}, $command;
@@ -99,7 +102,7 @@ sub __get {
     for my $key (@keys) {
         DEBUG "P: get: %s - %s", $handle->{peername}, $key;
     }
-    my $command = __cmd (get => @keys);
+    my $command = __cmd (get => map {$self->__preprocess ($_)} @keys);
     $handle->push_write ($command);
     my ($result);
     my $code; $code = sub {

@@ -214,6 +214,7 @@ sub _status_str {
             my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
             DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
             my $extras = pack ('N2', $flags, $expiration);
+            $key = $self->__preprocess ($key);
             $handle->push_write (memcached_bin => $opcode, $key, $extras, $value);
             $handle->push_read (memcached_bin => sub {
                                     my ($msg) = @_;
@@ -240,7 +241,7 @@ sub _status_str {
             my $extras = HAS_64BIT ?
               pack('Q2L', $value, $initial, $expires) :
                 pack('N5', 0, $value, 0, $initial, $expires);
-
+            $key = $self->__preprocess ($key);
             $handle->push_write (memcached_bin => $opcode, $key, $extras, undef, undef, undef, undef);
             $handle->push_read (memcached_bin => sub {
                                     my ($msg) = @_;
@@ -263,6 +264,7 @@ sub _status_str {
 sub __delete {
     my ($self, $handle, $cv, $key) = @_;
     DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
+    $key = $self->__preprocess ($key);
     $handle->push_write (memcached_bin => MEMD_DELETE, $key);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;
@@ -286,6 +288,7 @@ sub __get {
     for my $key (@keys) {
         DEBUG "P: get: %s - %s", $handle->{peername}, $key;
         $cv->begin;
+        $key = $self->__preprocess ($key);
         $handle->push_write (memcached_bin => MEMD_GETK, $key);
         $handle->push_read (memcached_bin => sub {
                                 my ($msg) = @_;

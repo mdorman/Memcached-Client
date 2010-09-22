@@ -78,6 +78,20 @@ This parameter is only made available for compatiblity with
 Cache::Memcached, and is ignored.  Memcached::Client will never
 rehash.
 
+=item C<preprocessor> => C<undef>
+
+This allows you to set a preprocessor routine to normalize all keys
+before they're sent to the server.  Expects a coderef that will
+transform its first argument and then return it.  The identity
+preprocessor would be:
+
+ sub {
+     return $_[0];
+ }
+
+This can be useful for mapping keys to a consistent case or encoding
+them as to allow spaces in keys or the like.
+
 =item C<procotol> => C<Text>
 
 You may provide the name of the class to be instantiated by
@@ -157,6 +171,7 @@ sub new {
     $self->hash_namespace ($args{hash_namespace} || 1);
     $self->namespace ($args{namespace} || "");
     $self->set_servers ($args{servers});
+    $self->set_preprocessor ($args{preprocessor});
 
     $self;
 }
@@ -212,6 +227,17 @@ sub hash_namespace {
     my $ret = $self->{hash_namespace};
     $self->{hash_namespace} = !!$new if (defined $new);
     return $ret;
+}
+
+=method set_preprocessor
+
+Change the preprocessor.
+
+=cut
+
+sub set_preprocessor {
+    my ($self, $new) = @_;
+    $self->{protocol}->set_preprocessor ($new);
 }
 
 =method set_servers()
