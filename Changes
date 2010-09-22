@@ -1,3 +1,7 @@
+v0.98
+
+ * Be more consistent in how we invoke memcached in tests.
+
 v0.97
 
  * Skip functional tests if memcached is not available.
