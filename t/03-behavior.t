@@ -147,35 +147,43 @@ my @tests = (['version',
              ['get_multi', ['bar', 'foo'],
               '->get with all keys set so far']);
 
-my $memcached = $ENV{MEMCACHED} || 'memcached';
+my $memcached = $ENV{MEMCACHED} || qx{which memcached};
 
-if (0 == system (qq{$memcached -h > /dev/null})) {
-    plan tests => (4 * (4 + scalar @tests));
+chomp ($memcached);
+
+if ($memcached) {
+    plan tests => 4 + (4 * scalar @tests);
 } else {
     plan skip_all => 'No memcached found';
 }
+
+isa_ok (my $servers = t::Memcached::Servers->new, 't::Memcached::Servers', 'Get memcached server list manager');
+my %args = (protocol => $protocol, selector => $selector, servers => $servers->servers);
+isa_ok (my $manager = t::Memcached::Manager->new (%args, memcached => $memcached), 't::Memcached::Manager', 'Get memcached manager');
+$args{namespace} = join ('.', time, $$, '');
+isa_ok (my $client = Memcached::Client->new (%args), 'Memcached::Client', "Get memcached client");
+$args{version} = $manager->version;
+isa_ok (my $mock = t::Memcached::Mock->new (%args), 't::Memcached::Mock', "Get mock memcached client");
 
 for my $async (0..1) {
     for my $protocol qw(Text Binary) {
         for my $selector qw(Traditional) {
             note sprintf "running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
-            run ($async, $selector, $protocol);
+            my $candidate = $servers->error;
+            run ($async, $selector, $protocol, $candidate);
+            if ($ENV{FAIL_TEST}) {
+                # Restart the failed server
+                $manager->start ($candidate);
+                $mock->start ($candidate);
+            }
         }
     }
 }
 
 sub run {
-    my ($async, $selector, $protocol) = @_;
+    my ($async, $selector, $protocol, $candidate) = @_;
 
     DEBUG "T: running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
-
-    isa_ok (my $servers = t::Memcached::Servers->new, 't::Memcached::Servers', 'Get memcached server list manager');
-    my %args = (protocol => $protocol, selector => $selector, servers => $servers->servers);
-    isa_ok (my $manager = t::Memcached::Manager->new (%args), 't::Memcached::Manager', 'Get memcached manager');
-    $args{namespace} = join ('.', time, $$, '');
-    isa_ok (my $client = Memcached::Client->new (%args), 'Memcached::Client', "Get memcached client");
-    $args{version} = $manager->version;
-    isa_ok (my $mock = t::Memcached::Mock->new (%args), 't::Memcached::Mock', "Get mock memcached client");
 
     my $fail = int (rand ($#tests - 10));
 
@@ -201,33 +209,30 @@ sub run {
             $test->($client->$method (@args));
         }
 
+        next unless $ENV{FAIL_TEST};
+
         if ($n == $fail) {
-            my $candidate = $servers->error;
             DEBUG "T: Failing %s", $candidate;
             if ($async) {
                 # To be able to get consistent results with the mock
                 # object, we *must* sync on the cv here.
                 $client->version (sub {
                                       note "Failing $candidate";
-                                      $manager->error ($candidate);
-                                      $mock->error ($candidate);
+                                      $manager->stop ($candidate);
+                                      $mock->stop ($candidate);
                                       $cv->send;
                                   });
                 $cv->recv;
                 $cv = AE::cv;
             } else {
                 note "Failing $candidate";
-                $mock->error ($candidate);
-                $manager->error ($candidate);
+                $mock->stop ($candidate);
+                $manager->stop ($candidate);
             }
         }
-
-
-
     }
 
     $cv->recv if $async;
-
 }
 
 1;

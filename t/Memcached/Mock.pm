@@ -90,14 +90,6 @@ sub delete {
     return 1;
 }
 
-sub error {
-    my ($self, $server) = @_;
-    delete $self->{servers}->{$server};
-    # $self->{servers}->{$server} = undef;
-    DEBUG "Deleted %s, result %s", $server, $self;
-    return 1;
-}
-
 sub flush_all {
     my ($self) = @_;
     map {
@@ -202,6 +194,19 @@ sub set_servers {
         $self->{servers}->{$server} ||= {};
     }
 
+    return 1;
+}
+
+sub start {
+    my ($self, $server) = @_;
+    $self->{servers}->{$server} ||= {};
+}
+
+sub stop {
+    my ($self, $server) = @_;
+    delete $self->{servers}->{$server};
+    # $self->{servers}->{$server} = undef;
+    DEBUG "Deleted %s, result %s", $server, $self;
     return 1;
 }
 
