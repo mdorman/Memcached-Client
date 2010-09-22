@@ -147,7 +147,11 @@ my @tests = (['version',
              ['get_multi', ['bar', 'foo'],
               '->get with all keys set so far']);
 
-plan tests => (4 * (4 + scalar @tests));
+if (0 == system (q{memcached -h})) {
+    plan tests => (4 * (4 + scalar @tests));
+} else {
+    plan skip_all => 'No memcached found';
+}
 
 for my $async (0..1) {
     for my $protocol qw(Text Binary) {
