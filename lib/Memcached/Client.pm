@@ -1006,9 +1006,8 @@ sub __delete_multi {
                                                       $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
                                                   }, sub {$cmd_cv->end});
         }
-
-        $cmd_cv->end;
     }
+    $cmd_cv->end;
 }
 
 sub __get {
