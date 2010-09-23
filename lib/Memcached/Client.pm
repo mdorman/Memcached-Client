@@ -737,20 +737,50 @@ returned.
 
     *replace = $keyed->("replace", 0);
 
+=method replace_multi
+
+[$rc = ] replace_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and if the specified key already exists in the cache, it will be set
+to the specified value.  If an expiration is included, it will
+determine the lifetime of the object on the server.
+
+Returns a hashref of [key, boolean] tuples, where 1 means the replace
+succeeded, 0 means it failed.
+
+=cut
+
+    *replace_multi = $multi->("replace");
+
 =method set()
 
 [$rc = ] set ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
 
-If the specified key does not already exist in the cache, it will be
-set to the specified value.  If an expiration is included, it will
-determine the lifetime of the object on the server.
+Set the specified key to the specified value.  If an expiration is
+included, it will determine the lifetime of the object on the server.
 
-If the add succeeds, 1 will be returned, if it fails, 0 will be
+If the set succeeds, 1 will be returned, if it fails, 0 will be
 returned.
 
 =cut
 
     *set = $keyed->("set", 0);
+
+=method set_multi
+
+[$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and set the specified key to the specified value.  If an expiration is
+included, it will determine the lifetime of the object on the server.
+
+Returns a hashref of [key, boolean] tuples, where 1 means the set
+succeeded, 0 means it failed.
+
+=cut
+
+    *set_multi = $multi->("set");
 
 =method stats ()
 
