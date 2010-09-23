@@ -535,7 +535,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-    *add_multi = $multi->("add_multi");
+    *add_multi = $multi->("add");
 
 =method append
 
