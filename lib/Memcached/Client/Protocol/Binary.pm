@@ -212,9 +212,8 @@ sub _status_str {
         my ($name, $opcode) = @_;
         sub {
             my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
+            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
             my $extras = pack ('N2', $flags, $expiration);
-            $key = $self->__preprocess ($key);
             $handle->push_write (memcached_bin => $opcode, $key, $extras, $value);
             $handle->push_read (memcached_bin => sub {
                                     my ($msg) = @_;
@@ -234,24 +233,23 @@ sub _status_str {
     my $generator = sub {
         my ($name, $opcode) = @_;
         return sub {
-            my ($self, $handle, $cv, $key, $value, $initial) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
+            my ($self, $handle, $cv, $key, $delta, $initial) = @_;
+            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
             my $expires = defined $initial ? 0 : 0xffffffff;
             $initial ||= 0;
             my $extras = HAS_64BIT ?
-              pack('Q2L', $value, $initial, $expires) :
-                pack('N5', 0, $value, 0, $initial, $expires);
-            $key = $self->__preprocess ($key);
+              pack('Q2L', $delta, $initial, $expires) :
+                pack('N5', 0, $delta, 0, $initial, $expires);
             $handle->push_write (memcached_bin => $opcode, $key, $extras, undef, undef, undef, undef);
             $handle->push_read (memcached_bin => sub {
                                     my ($msg) = @_;
-                                    my $value;
+                                    my $delta;
                                     if (HAS_64BIT) {
-                                        $value = unpack ('Q', $msg->{value});
+                                        $delta = unpack ('Q', $msg->{value});
                                     } else {
-                                        (undef, $value) = unpack ('N2', $msg->{value});
+                                        (undef, $delta) = unpack ('N2', $msg->{value});
                                     }
-                                    $cv->send (0 == $_[0]->{status} ? $value : undef);
+                                    $cv->send (0 == $_[0]->{status} ? $delta : undef);
                                 });
         }
     };
@@ -263,8 +261,7 @@ sub _status_str {
 
 sub __delete {
     my ($self, $handle, $cv, $key) = @_;
-    DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
-    $key = $self->__preprocess ($key);
+    # DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
     $handle->push_write (memcached_bin => MEMD_DELETE, $key);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;
@@ -286,9 +283,8 @@ sub __get {
     my (%rv);
     $cv->begin (sub {$_[0]->send (\%rv)});
     for my $key (@keys) {
-        DEBUG "P: get: %s - %s", $handle->{peername}, $key;
+        # DEBUG "P: get: %s - %s", $handle->{peername}, $key;
         $cv->begin;
-        $key = $self->__preprocess ($key);
         $handle->push_write (memcached_bin => MEMD_GETK, $key);
         $handle->push_read (memcached_bin => sub {
                                 my ($msg) = @_;
@@ -304,7 +300,7 @@ sub __get {
 
 sub __version {
     my ($self, $handle, $cv) = @_;
-    DEBUG "P: version: %s", $handle->{peername};
+    # DEBUG "P: version: %s", $handle->{peername};
     $handle->push_write (memcached_bin => MEMD_VERSION);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;

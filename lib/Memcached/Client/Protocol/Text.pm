@@ -15,8 +15,7 @@ sub __cmd {
         my ($name) = @_;
         sub {
             my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
-            $key = $self->__preprocess ($key);
+            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
             my $command = __cmd ($name, $key, $flags, $expiration, length $value) . __cmd ($value);
             $handle->push_write ($command);
             $handle->push_read (line => sub {
@@ -39,9 +38,9 @@ sub __cmd {
         my ($name) = @_;
         return sub {
             my ($self, $handle, $cv, $key, $delta, $initial) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
-            $key = $self->__preprocess ($key);
+            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
             my $command = __cmd ($name, $key, $delta);
+            # DEBUG "P [%s]: > %s", $handle->{peername}, $command;
             $handle->push_write ($command);
             $handle->push_read (line => sub {
                                     my ($handle, $line) = @_;
@@ -72,11 +71,10 @@ sub __cmd {
 
 sub __delete {
     my ($self, $handle, $cv, $key) = @_;
-    DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
-    $key = $self->__preprocess ($key);
+    # DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
     my $command = __cmd (delete => $key);
     $handle->push_write ($command);
-    #DEBUG "P [%s]: > %s", $handle->{peername}, $command;
+    # DEBUG "P [%s]: > %s", $handle->{peername}, $command;
     $handle->push_read (line => sub {
                             my ($handle, $line) = @_;
                             # DEBUG "P [%s]: < %s", $handle->{peername}, $line;
@@ -88,7 +86,7 @@ sub __flush_all {
     my ($self, $handle, $cv, $delay) = @_;
     my $command = $delay ? __cmd (flush_all => $delay) : __cmd ("flush_all");
     $handle->push_write ($command);
-    DEBUG "P: flush_all: %s", $handle->{peername};
+    # DEBUG "P: flush_all: %s", $handle->{peername};
     # DEBUG "P [%s]: > %s", $handle->{peername}, $command;
     $handle->push_read (line => sub {
                             my ($handle, $line) = @_;
@@ -100,9 +98,9 @@ sub __flush_all {
 sub __get {
     my ($self, $handle, $cv, @keys) = @_;
     for my $key (@keys) {
-        DEBUG "P: get: %s - %s", $handle->{peername}, $key;
+        # DEBUG "P: get: %s - %s", $handle->{peername}, $key;
     }
-    my $command = __cmd (get => map {$self->__preprocess ($_)} @keys);
+    my $command = __cmd (get => @keys);
     $handle->push_write ($command);
     my ($result);
     my $code; $code = sub {
@@ -136,7 +134,7 @@ sub __stats {
     my ($self, $handle, $cv, $name) = @_;
     my $command = $name ? __cmd (stats => $name) : __cmd ("stats");
     $handle->push_write ($command);
-    DEBUG "P: stats: %s", $handle->{peername};
+    # DEBUG "P: stats: %s", $handle->{peername};
     # DEBUG "P [%s]: > %s", $handle->{peername}, $command;
     my ($result);
     my $code; $code = sub {
@@ -159,7 +157,7 @@ sub __version {
     my ($self, $handle, $cv) = @_;
     my $command = __cmd ("version");
     $handle->push_write ($command);
-    DEBUG "P: version: %s", $handle->{peername};
+    # DEBUG "P: version: %s", $handle->{peername};
     # DEBUG "P [%s]: > %s", $handle->{peername}, $command;
     $handle->push_read (line => sub {
                             my ($handle, $line) = @_;

@@ -3,6 +3,7 @@ v0.98
  * Be more consistent in how we invoke memcached in tests.
  * Only do the server failure tests if FAIL_TEST is set.
  * Allow setting of a preprocessor routine for normalization of keys.
+ * Fix various issues with _multi routines, add tests!
 
 v0.97
 

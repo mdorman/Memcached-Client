@@ -7,7 +7,7 @@ use AnyEvent qw{};
 use AnyEvent::Handle qw{};
 use Carp qw{carp};
 use Memcached::Client::Connection qw{};
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{# DEBUG INFO};
 use Module::Load;
 
 =head1 SYNOPSIS
@@ -231,13 +231,30 @@ sub hash_namespace {
 
 =method set_preprocessor
 
-Change the preprocessor.
+Sets a routine to preprocess keys before they are transmitted.
+
+If you want to do some transformation to all keys before they hit the
+wire, give this a subroutine reference and it will be run across all
+keys.
 
 =cut
 
 sub set_preprocessor {
     my ($self, $new) = @_;
-    $self->{protocol}->set_preprocessor ($new);
+    $self->{preprocessor} = $new if (ref $new eq "CODE");
+    return 1;
+}
+
+=method __preprocess
+
+Preprocess keys before they are transmitted.
+
+=cut
+
+sub __preprocess {
+    my ($self, $key) = @_;
+    return $key unless $self->{preprocessor};
+    return $self->{preprocessor}->($key);
 }
 
 =method set_servers()
@@ -406,9 +423,7 @@ sub DESTROY {
             $cmd_cv ||= AE::cv;
             $cmd_cv->cb (sub {$callback->($cmd_cv->recv || $default)}) if ($callback);
 
-            my ($key) = shift @args;
-
-            if (my $server = $self->__hash ($key)) {
+            if (my ($key, $server) = $self->__hash (shift @args)) {
                 # DEBUG "C [%s]: %s", $command, join " ", map {defined $_ ? "[$_]" : "[undef]"} $key, @args;
                 $self->$subname ($cmd_cv, wantarray, $self->{servers}->{$server}, $key, @args) or $cmd_cv->send ($default);
             } else {
@@ -436,7 +451,7 @@ sub DESTROY {
 
     my $multi = sub {
         my ($command) = @_;
-        my $subname = "__$command";
+        my $subname = "__${command}_multi";
         sub {
             my ($self, @args) = @_;
 
@@ -646,7 +661,7 @@ key => value pairs.
 
 =cut
 
-    *get_multi = $multi->("get_multi");
+    *get_multi = $multi->("get");
 
 =method incr
 
@@ -665,6 +680,24 @@ undef will be the result.
 =cut
 
     *incr = $keyed->("incr", undef);
+
+=method incr_multi
+
+[$value = ] incr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
+
+If the specified key already exists in the cache, it will be
+incremented by the specified delta value, or 1 if no delta is
+specified.
+
+If the value does not exist in the cache, and an initial value is
+supplied, the key will be set to that value.
+
+If the incr succeeds, the resulting value will be returned, otherwise
+undef will be the result.
+
+=cut
+
+    *incr_multi = $multi->("incr");
 
 =method prepend($key, $value, $cb->($rc));
 
@@ -750,8 +783,9 @@ Returns a hashref of server => version pairs.
 
 sub __hash {
     my ($self, $key) = @_;
+    $key = $self->{preprocessor}->($key) if ($self->{preprocessor});
     return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
-    return $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "");
+    return ($key, $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : ""));
 }
 
 {
@@ -794,10 +828,10 @@ sub __hash {
             # DEBUG "Tuples are %s", $tuples;
             for my $tuple (@{$tuples}) {
                 # DEBUG "Tuple is %s", $tuple;
-                my ($key, $value, $expiration) = @{$tuple};
-                $expiration = int ($expiration || 0);
-                $rv{$key} = 0;
-                if (my $server = $self->__hash ($key)) {
+                if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
+                    my ($value, $expiration) = @{$tuple};
+                    $expiration = int ($expiration || 0);
+                    $rv{$key} = 0;
                     # DEBUG "C: $command %s", $server;
                     $cmd_cv->begin;
                     $self->{servers}->{$server}->enqueue (sub {
@@ -855,33 +889,41 @@ sub __hash {
             my ($self, $cmd_cv, $wantarray, $tuples) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
+            # DEBUG "Begin on command CV to establish callback";
             $cmd_cv->begin (sub {$_[0]->send (\%rv)});
             # DEBUG "Tuples are %s", $tuples;
             for my $tuple (@{$tuples}) {
                 # DEBUG "Tuple is %s", $tuple;
-                my ($key, $delta, $initial) = @{$tuple};
-                $rv{$key} = 0;
-                if (my $server = $self->__hash ($key)) {
+                if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
+                    # DEBUG "keys is %s, server is %s", $key, $server;
+                    my ($delta, $initial) = @{$tuple};
+                    $delta //= 1;
                     # DEBUG "C: $command %s", $server;
+                    # DEBUG "Begin on command CV before enqueue";
                     $cmd_cv->begin;
                     $self->{servers}->{$server}->enqueue (sub {
                                                               my ($handle, $completion, $server) = @_;
                                                               my $server_cv = AE::cv {
                                                                   $completion->();
                                                                   $rv{$key} = $_[0]->recv;
+                                                                  # DEBUG "End on command CV from server CV";
                                                                   $cmd_cv->end;
                                                               };
                                                               $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
-                                                          }, sub {$cmd_cv->end});
+                                                          }, sub {
+                                                              # DEBUG "End on command CV from error callback";
+                                                              $cmd_cv->end
+                                                          });
                 }
-
-                $cmd_cv->end;
             }
+
+            # DEBUG "End on command CV ";
+            $cmd_cv->end;
         }
     };
 
     *__incr_multi = $generator->("incr");
-    *__decr_multi = $generator->("append");
+    *__decr_multi = $generator->("decr");
 }
 
 sub __delete {
@@ -904,9 +946,9 @@ sub __delete_multi {
     $cmd_cv->begin (sub {$_[0]->send (\%rv)});
     # DEBUG "Keys are %s", \@keys;
     for my $key (@keys) {
-        # DEBUG "key is %s", $key;
-        $rv{$key} = 0;
-        if (my $server = $self->__hash ($key)) {
+        if (my ($key, $server) = $self->__hash ($key)) {
+            # DEBUG "key is %s", $key;
+            $rv{$key} = 0;
             # DEBUG "C: delete_multi %s", $server;
             $cmd_cv->begin;
             $self->{servers}->{$server}->enqueue (sub {
@@ -948,7 +990,7 @@ sub __get_multi {
     # DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%requests);
     for my $key (@{$keys}) {
-        if (my $server = $self->__hash ($key)) {
+        if (my ($key, $server) = $self->__hash ($key)) {
             push @{$requests{$server}}, $self->{namespace} . (ref $key ? $key->[1] : $key);
         }
     }
