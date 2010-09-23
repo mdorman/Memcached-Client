@@ -13,7 +13,7 @@ sub new {
     my $self = bless {}, $class;
     $self->{memcached} = $args{memcached} || $ENV{MEMCACHED} || qx{which memcached};
     chomp $self->{memcached};
-    INFO "Using memcached %s", $self->{memcached};
+    note "Using memcached $self->{memcached}";
     map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
     # Remove any old logs so they don't confuse things
     unlink for (glob "t/memcached-*.log");
