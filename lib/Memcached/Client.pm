@@ -713,6 +713,22 @@ returned.
 
     *prepend = $keyed->("prepend", 0);
 
+=method prepend_multi
+
+[$rc = ] prepend_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and if the specified key already exists in the cache, it will have the
+the specified value prepended to it.  If an expiration is included, it
+will determine the lifetime of the object on the server.
+
+Returns a hashref of [key, boolean] tuples, where 1 means the add
+succeeded, 0 means it failed.
+
+=cut
+
+    *prepend_multi = $multi->("prepend");
+
 =method remove
 
 Alias to delete
