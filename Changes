@@ -1,3 +1,7 @@
+v0.99
+
+ * Don't wait on CVs that we were given, rather than generated.
+
 v0.98
 
  * Be more consistent in how we invoke memcached in tests.
