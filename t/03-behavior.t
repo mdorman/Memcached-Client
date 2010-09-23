@@ -66,6 +66,8 @@ my @tests = (['version',
               '->replace with a non-existent value'],
              ['replace', 'bar', 'gondola',
               '->replace with an existing value'],
+             ['replace_multi', [['porridge', 'sweet'], ['complex', 'NP'], ['ludo', 'panopticon']],
+              '->replace_multi with various keys'],
 
              ['get', 'bar',
               '->get to verify replacement'],
@@ -85,6 +87,8 @@ my @tests = (['version',
               '->append with a non-existent value'],
              ['append', 'bar', 'gorp',
               '->append with an existing value'],
+             ['append_multi', [['porridge', ' and salty'], ['complex', ' != P']],
+              '->append_multi with various keys'],
 
              ['get', 'bar',
               '->get to verify ->append'],
@@ -104,6 +108,9 @@ my @tests = (['version',
               '->prepend with a non-existent value'],
              ['prepend', 'foo', 'gorp',
               '->prepend with an existing value'],
+             ['prepend_multi', [['porridge', 'We love ']],
+              '->prepend_multi with various keys'],
+
 
              ['get', 'foo',
               '->get to verify ->prepend'],
@@ -153,6 +160,9 @@ my @tests = (['version',
 
              ['incr_multi', [['braga', 1, 17], ['foo', 7]],
               '->incr_multi with various keys'],
+
+             ['decr_multi', [['braga', 3], ['bartinate', 7, 33]],
+              '->decr_multi with various keys'],
 
              ['flush_all',
               '->flush_all to clear servers'],
