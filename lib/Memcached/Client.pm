@@ -565,7 +565,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-    *append_multi = $multi->("append_multi");
+    *append_multi = $multi->("append");
 
 =method decr
 
@@ -628,7 +628,7 @@ result.
 
 =cut
 
-    *delete_multi = $multi->("delete_multi");
+    *delete_multi = $multi->("delete");
 
 =method flush_all
 
