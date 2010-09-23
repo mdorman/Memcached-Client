@@ -375,7 +375,7 @@ sub DESTROY {
             }
             $cmd_cv->end;
             # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
-            $cmd_cv->recv unless ($callback);
+            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
         }
     };
 
@@ -431,7 +431,7 @@ sub DESTROY {
             }
 
             # DEBUG "C [%s]: %s", $command, $callback ? "using callback" : "using condvar";
-            ($cmd_cv->recv || $default) unless ($callback);
+            ($cmd_cv->recv || $default) unless ($callback or ($cmd_cv eq $_[$#_]));
         }
     };
 
@@ -477,7 +477,7 @@ sub DESTROY {
             $self->$subname ($cmd_cv, wantarray, @args);
 
             # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
-            $cmd_cv->recv unless ($callback);
+            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
         }
     };
 
