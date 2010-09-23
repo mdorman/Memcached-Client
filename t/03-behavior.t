@@ -159,26 +159,24 @@ my $memcached = $ENV{MEMCACHED} || qx{which memcached};
 chomp ($memcached);
 
 if ($memcached) {
-    plan tests => 4 + (4 * scalar @tests);
+    plan tests => 2 + (4 * (scalar @tests + 2));
 } else {
     plan skip_all => 'No memcached found';
 }
 
 isa_ok (my $servers = t::Memcached::Servers->new, 't::Memcached::Servers', 'Get memcached server list manager');
-my %args = (protocol => $protocol, selector => $selector, servers => $servers->servers);
-isa_ok (my $manager = t::Memcached::Manager->new (%args, memcached => $memcached), 't::Memcached::Manager', 'Get memcached manager');
-$args{namespace} = join ('.', time, $$, '');
-isa_ok (my $client = Memcached::Client->new (%args), 'Memcached::Client', "Get memcached client");
-$args{version} = $manager->version;
-isa_ok (my $mock = t::Memcached::Mock->new (%args), 't::Memcached::Mock', "Get mock memcached client");
+isa_ok (my $manager = t::Memcached::Manager->new (memcached => $memcached, servers => $servers->servers), 't::Memcached::Manager', 'Get memcached manager');
 
 for my $async (0..1) {
     for my $protocol qw(Text Binary) {
         for my $selector qw(Traditional) {
             note sprintf "running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
+            my $namespace = join ('.', time, $$, '');
+            isa_ok (my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers->servers), 'Memcached::Client', "Get memcached client");
+            isa_ok (my $mock = t::Memcached::Mock->new (namespace => $namespace, selector => $selector, servers => $servers->servers, version => $manager->version), 't::Memcached::Mock', "Get mock memcached client");
             my $candidate = $servers->error;
             my $tests = freeze \@tests;
-            run ($async, $selector, $protocol, $candidate, $tests);
+            run ($async, $selector, $protocol, $candidate, $client, $mock, $tests);
             if ($ENV{FAIL_TEST}) {
                 # Restart the failed server
                 $manager->start ($candidate);
@@ -189,7 +187,7 @@ for my $async (0..1) {
 }
 
 sub run {
-    my ($async, $selector, $protocol, $candidate, $tests) = @_;
+    my ($async, $selector, $protocol, $candidate, $client, $mock, $tests) = @_;
 
     my @tests = @{thaw $tests};
 
