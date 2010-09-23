@@ -7,7 +7,7 @@ use AnyEvent qw{};
 use AnyEvent::Handle qw{};
 use Carp qw{carp};
 use Memcached::Client::Connection qw{};
-use Memcached::Client::Log qw{# DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG INFO};
 use Module::Load;
 
 =head1 SYNOPSIS
