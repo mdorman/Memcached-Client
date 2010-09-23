@@ -118,9 +118,9 @@ sub delete {
 }
 
 sub delete_multi {
-    my ($self, $keys) = @_;
+    my ($self, @keys) = @_;
     my (%rv);
-    for my $key (@{$keys}) {
+    for my $key (@keys) {
         $rv{$key} = $self->delete ($key);
     }
     return \%rv;

@@ -121,6 +121,8 @@ my @tests = (['version',
               '->delete with a non-existent key'],
              ['delete', 'foo',
               '->delete with an existing key'],
+             ['delete_multi', 'complex', 'panopticon',
+              '->delete_multi with various keys'],
 
              ['get', 'foo',
               '->get to verify ->delete'],
