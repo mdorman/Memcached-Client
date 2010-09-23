@@ -845,9 +845,8 @@ sub __hash {
                                                               $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
                                                           }, sub {$cmd_cv->end});
                 }
-
-                $cmd_cv->end;
             }
+            $cmd_cv->end;
         }
     };
 
