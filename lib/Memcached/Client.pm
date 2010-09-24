@@ -335,7 +335,7 @@ sub DESTROY {
     # outstanding requests.
 
     my $broadcast = sub {
-        my ($command) = @_;
+        my ($command, $nowait) = @_;
         my $subname = "__$command";
         sub {
             my ($self, @args) = @_;
@@ -349,9 +349,9 @@ sub DESTROY {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
+            } elsif (!defined wantarray and !$nowait) {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value";
             }
 
             $cmd_cv ||= AE::cv;
@@ -400,7 +400,7 @@ sub DESTROY {
     # through the command CV.
 
     my $keyed = sub {
-        my ($command, $default) = @_;
+        my ($command, $default, $nowait) = @_;
         my $subname = "__$command";
         sub {
             my ($self, @args) = @_;
@@ -414,9 +414,9 @@ sub DESTROY {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
+            } elsif (!defined wantarray and !$nowait) {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value";
             }
 
             # Even if we're given a callback, we proxy it through a CV of our own creation
@@ -450,7 +450,7 @@ sub DESTROY {
     # command CV all additional arguments.
 
     my $multi = sub {
-        my ($command) = @_;
+        my ($command, $nowait) = @_;
         my $subname = "__${command}_multi";
         sub {
             my ($self, @args) = @_;
@@ -464,9 +464,9 @@ sub DESTROY {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
+            } elsif (!defined wantarray and !$nowait) {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value" ;
             }
 
             # Even if we're given a callback, we proxy it through a CV of our own creation
@@ -519,7 +519,7 @@ returned.
 
 =cut
 
-    *add = $keyed->("add", 0);
+    *add = $keyed->("add", 0, 1);
 
 =method add_multi
 
@@ -535,7 +535,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-    *add_multi = $multi->("add");
+    *add_multi = $multi->("add", 1);
 
 =method append
 
@@ -549,7 +549,7 @@ returned.
 
 =cut
 
-    *append = $keyed->("append", 0);
+    *append = $keyed->("append", 0, 1);
 
 =method append_multi
 
@@ -565,7 +565,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-    *append_multi = $multi->("append");
+    *append_multi = $multi->("append", 1);
 
 =method decr
 
@@ -583,7 +583,7 @@ undef will be the result.
 
 =cut
 
-    *decr = $keyed->("decr", undef);
+    *decr = $keyed->("decr", undef, 0);
 
 =method decr_multi
 
@@ -601,7 +601,7 @@ undef will be the result.
 
 =cut
 
-    *decr_multi = $multi->("decr");
+    *decr_multi = $multi->("decr", 0);
 
 =method delete
 
@@ -614,7 +614,7 @@ result.
 
 =cut
 
-    *delete = $keyed->("delete", 0);
+    *delete = $keyed->("delete", 0, 1);
 
 =method delete_multi
 
@@ -628,7 +628,7 @@ result.
 
 =cut
 
-    *delete_multi = $multi->("delete");
+    *delete_multi = $multi->("delete", 1);
 
 =method flush_all
 
@@ -640,7 +640,7 @@ Returns a hashref indicating which servers the flush succeeded on.
 
 =cut
 
-    *flush_all = $broadcast->("flush_all");
+    *flush_all = $broadcast->("flush_all", 1);
 
 =method get
 
@@ -650,7 +650,7 @@ Retrieves the specified key from the cache, otherwise returning undef.
 
 =cut
 
-    *get = $keyed->("get", undef);
+    *get = $keyed->("get", undef, 0);
 
 =method get_multi
 
@@ -661,7 +661,7 @@ key => value pairs.
 
 =cut
 
-    *get_multi = $multi->("get");
+    *get_multi = $multi->("get", 0);
 
 =method incr
 
@@ -679,7 +679,7 @@ undef will be the result.
 
 =cut
 
-    *incr = $keyed->("incr", undef);
+    *incr = $keyed->("incr", undef, 0);
 
 =method incr_multi
 
@@ -697,7 +697,7 @@ undef will be the result.
 
 =cut
 
-    *incr_multi = $multi->("incr");
+    *incr_multi = $multi->("incr", 0);
 
 =method prepend($key, $value, $cb->($rc));
 
@@ -711,7 +711,7 @@ returned.
 
 =cut
 
-    *prepend = $keyed->("prepend", 0);
+    *prepend = $keyed->("prepend", 0, 1);
 
 =method prepend_multi
 
@@ -727,7 +727,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-    *prepend_multi = $multi->("prepend");
+    *prepend_multi = $multi->("prepend", 1);
 
 =method remove
 
@@ -735,7 +735,7 @@ Alias to delete
 
 =cut
 
-    *remove = $keyed->("delete", 0);
+    *remove = $keyed->("delete", 0, 1);
 
 =method replace
 
@@ -751,7 +751,7 @@ returned.
 
 =cut
 
-    *replace = $keyed->("replace", 0);
+    *replace = $keyed->("replace", 0, 0);
 
 =method replace_multi
 
@@ -767,7 +767,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-    *replace_multi = $multi->("replace");
+    *replace_multi = $multi->("replace", 1);
 
 =method set()
 
@@ -781,7 +781,7 @@ returned.
 
 =cut
 
-    *set = $keyed->("set", 0);
+    *set = $keyed->("set", 0, 0);
 
 =method set_multi
 
@@ -796,7 +796,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-    *set_multi = $multi->("set");
+    *set_multi = $multi->("set", 1);
 
 =method stats ()
 
@@ -808,7 +808,7 @@ Returns a hashref of hashrefs with the named stats.
 
 =cut
 
-    *stats = $broadcast->("stats");
+    *stats = $broadcast->("stats", 0);
 
 =method version()
 
@@ -820,7 +820,7 @@ Returns a hashref of server => version pairs.
 
 =cut
 
-    *version = $broadcast->("version");
+    *version = $broadcast->("version", 0);
 }
 
 # We use this routine to select our server---it uses the selector to

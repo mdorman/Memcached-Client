@@ -1,3 +1,8 @@
+v1.0
+
+ * Only warn about no route to return results for thing where the
+   results are the point: get, incr/decr, stats, version.
+
 v0.99
 
  * Don't wait on CVs that we were given, rather than generated.
