@@ -1,0 +1,30 @@
+Source: memcached-client
+Section: perl
+Priority: optional
+Build-Depends: debhelper (>= 7)
+Build-Depends-Indep: libanyevent-perl, libstring-crc32-perl, perl (>= 5.10.0), memcached
+Maintainer: Michael Alan Dorman <mdorman@ironicdesign.com>
+Standards-Version: 3.9.1
+Homepage: http://search.cpan.org/dist/Memcached-Client/
+
+Package: libmemcached-client-perl
+Architecture: all
+Depends: ${misc:Depends}, ${perl:Depends}, libanyevent-perl,
+ libstring-crc32-perl, perl (>= 5.10.0)
+Description: All-singing, all-dancing Perl client for Memcached
+ Memcached::Client attempts to be a versatile Perl client for the
+ memcached protocol.
+ .
+ It is built to be usable in a synchronous style by most Perl code,
+ while also being capable of being used as an entirely asynchronous
+ library running under AnyEvent.
+ .
+ In theory, being based on AnyEvent means that it can be integrated in
+ asynchrous programs running under EV, Event, POE, Glib, IO::Async,
+ etc., though it has only really been tested using AnyEvent's
+ pure-Perl and EV back-ends.
+ .
+ It allows for pluggable implementations of hashing, protcol,
+ serialization and compression---it currently implements the
+ traditional Cache::Memcached hashing, both text and binary protocols,
+ and serialization using Storable, and compression using gzip.

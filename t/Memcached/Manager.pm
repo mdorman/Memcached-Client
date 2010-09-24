@@ -11,17 +11,14 @@ sub new {
     my ($class, @args) = @_;
     my %args = 1 == scalar @args ? %{$args[0]} : @args;
     my $self = bless {}, $class;
-    $self->{memcached} = $args{memcached} || $ENV{MEMCACHED} || '/usr/bin/memcached';
+    $self->{memcached} = $args{memcached} || $ENV{MEMCACHED} || qx{which memcached};
+    chomp $self->{memcached};
+    note "Using memcached $self->{memcached}";
     map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
     # Remove any old logs so they don't confuse things
     unlink for (glob "t/memcached-*.log");
     map {$self->start ($_)} keys %{$self->{servers}};
     $self;
-}
-
-sub error {
-    my ($self, $server) = @_;
-    $self->stop ($server);
 }
 
 sub start {
@@ -35,13 +32,13 @@ sub start {
 
     # Fork a new process
     if ($pid) {
-        $self->{servers}->{$server}->{pid} = $pid;
-        # DEBUG "Fork successful, server struct %s", $self->{servers}->{$server};
+        $self->{servers}->{$server} = $pid;
+        DEBUG "Fork successful, pid %s", $self->{servers}->{$server};
         $self->wait ($host, $port);
         sleep 0.1;
     } elsif (defined $pid) {
         open STDIN, '/dev/null' or die ("Couldn't redirect STDIN");
-        open STDOUT, ">t/memcached-$port.log" or die ("Couldn't redirect STDOUT");
+        open STDOUT, ">>t/memcached-$port.log" or die ("Couldn't redirect STDOUT");
         open STDERR, '>&STDOUT' or die ("Couldn't redirect STDERR");
 
         exec $self->{memcached}, "-l", $host, "-p", $port, "-vv";
@@ -76,11 +73,8 @@ sub wait {
 sub stop {
     my ($self, $id) = @_;
 
-    my $server = delete $self->{servers}->{$id} or die "No server $id";
-    # DEBUG "Server is %s", $server;
-    my $pid = $server->{pid} ;
-
-    # DEBUG "Pid is %s", $pid;
+    my $pid = delete $self->{servers}->{$id} or die "No server $id";
+    DEBUG "Pid is %s", $pid;
 
     my $result = 0;
 
@@ -88,6 +82,7 @@ sub stop {
     local $?;
 
     for my $sig (qw{TERM HUP QUIT INT KILL}) {
+        DEBUG "Trying %s", $sig;
         kill ($sig, $pid);
         if (waitpid ($pid, 0) == $pid) {
             $result = 1;

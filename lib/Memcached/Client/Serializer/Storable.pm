@@ -1,4 +1,7 @@
 package Memcached::Client::Serializer::Storable;
+BEGIN {
+  $Memcached::Client::Serializer::Storable::VERSION = '0.99';
+}
 #ABSTRACT: Implements Traditional Memcached Serializing (Storable and Gzip)
 
 use bytes;
@@ -15,11 +18,6 @@ use constant +{
     COMPRESS_SAVINGS => 0.20,
 };
 
-=method compress_threshold()
-
-Retrieve or change the compress_threshold value.
-
-=cut
 
 sub compress_threshold {
     my ($self, $new) = @_;
@@ -85,3 +83,34 @@ sub serialize {
 }
 
 1;
+
+__END__
+=pod
+
+=head1 NAME
+
+Memcached::Client::Serializer::Storable - Implements Traditional Memcached Serializing (Storable and Gzip)
+
+=head1 VERSION
+
+version 0.99
+
+=head1 METHODS
+
+=head2 compress_threshold()
+
+Retrieve or change the compress_threshold value.
+
+=head1 AUTHOR
+
+Michael Alan Dorman <mdorman@ironicdesign.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2010 by Michael Alan Dorman.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
+

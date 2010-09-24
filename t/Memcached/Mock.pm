@@ -46,8 +46,8 @@ sub add_multi {
     my ($self, $tuples) = @_;
     my (%rv);
     for my $tuple (@{$tuples}) {
-        my ($key, $value) = @{$tuple};
-        $rv{$key} = $self->add ($key, $value);
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->add (@{$tuple});
     }
     return \%rv;
 }
@@ -64,18 +64,45 @@ sub append {
     return 1;
 }
 
+sub append_multi {
+    my ($self, $tuples) = @_;
+    my (%rv);
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->append (@{$tuple});
+    }
+    return \%rv;
+}
+
 sub decr {
-    my ($self, $key, $value) = @_;
-    $value //= 1;
+    my ($self, $key, $delta, $initial) = @_;
+    $delta //= 1;
     return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    DEBUG "M: decr: %s - %s - %s", $server, $index, $value;
-    return unless (defined $self->{servers}->{$server}->{$index});
-    $value = $self->{servers}->{$server}->{$index} if ($value > $self->{servers}->{$server}->{$index});
-    $self->{servers}->{$server}->{$index} -= $value;
+    DEBUG "M: decr: %s - %s - %s", $server, $index, $delta;
+    if (defined $self->{servers}->{$server}->{$index}) {
+        if ($self->{servers}->{$server}->{$index} =~ m/^\d+$/) {
+            $delta = $self->{servers}->{$server}->{$index} if ($delta > $self->{servers}->{$server}->{$index});
+            $self->{servers}->{$server}->{$index} -= $delta;
+        } else {
+            return "CLIENT_ERROR cannot increment or decrement non-numeric value";
+        }
+    } elsif (defined $initial) {
+        $self->{servers}->{$server}->{$index} = $initial;
+    }
     return $self->{servers}->{$server}->{$index};
+}
+
+sub decr_multi {
+    my ($self, $tuples) = @_;
+    my (%rv);
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->decr (@{$tuple});
+    }
+    return \%rv;
 }
 
 sub delete {
@@ -90,12 +117,13 @@ sub delete {
     return 1;
 }
 
-sub error {
-    my ($self, $server) = @_;
-    delete $self->{servers}->{$server};
-    # $self->{servers}->{$server} = undef;
-    DEBUG "Deleted %s, result %s", $server, $self;
-    return 1;
+sub delete_multi {
+    my ($self, @keys) = @_;
+    my (%rv);
+    for my $key (@keys) {
+        $rv{$key} = $self->delete ($key);
+    }
+    return \%rv;
 }
 
 sub flush_all {
@@ -134,16 +162,33 @@ sub get_multi {
 }
 
 sub incr {
-    my ($self, $key, $value) = @_;
-    $value //= 1;
+    my ($self, $key, $delta, $initial) = @_;
+    $delta //= 1;
     return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    DEBUG "M: incr: %s - %s - %s", $server, $index, $value;
-    return unless (defined $self->{servers}->{$server}->{$index});
-    $self->{servers}->{$server}->{$index} += $value;
+    DEBUG "M: incr: %s - %s - %s", $server, $index, $delta;
+    if (defined $self->{servers}->{$server}->{$index}) {
+        if ($self->{servers}->{$server}->{$index} =~ m/^\d+$/) {
+            $self->{servers}->{$server}->{$index} += $delta;
+        } else {
+            return "CLIENT_ERROR cannot increment or decrement non-numeric value";
+        }
+    } else {
+        $self->{servers}->{$server}->{$index} = $initial;
+    }
     return $self->{servers}->{$server}->{$index};
+}
+
+sub incr_multi {
+    my ($self, $tuples) = @_;
+    my (%rv);
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->incr (@{$tuple});
+    }
+    return \%rv;
 }
 
 sub namespace {
@@ -165,6 +210,16 @@ sub prepend {
     return 1;
 }
 
+sub prepend_multi {
+    my ($self, $tuples) = @_;
+    my (%rv);
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->prepend (@{$tuple});
+    }
+    return \%rv;
+}
+
 sub replace {
     my ($self, $key, $value) = @_;
     return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " ") and defined $value);
@@ -177,6 +232,16 @@ sub replace {
     return 1;
 }
 
+sub replace_multi {
+    my ($self, $tuples) = @_;
+    my (%rv);
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->replace (@{$tuple});
+    }
+    return \%rv;
+}
+
 sub set {
     my ($self, $key, $value) = @_;
     return 0 unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " ") and defined $value);
@@ -186,6 +251,16 @@ sub set {
     DEBUG "M: set: %s - %s - %s", $server, $index, $value;
     $self->{servers}->{$server}->{$index} = $value;
     return 1;
+}
+
+sub set_multi {
+    my ($self, $tuples) = @_;
+    my (%rv);
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->set (@{$tuple});
+    }
+    return \%rv;
 }
 
 sub set_servers {
@@ -202,6 +277,19 @@ sub set_servers {
         $self->{servers}->{$server} ||= {};
     }
 
+    return 1;
+}
+
+sub start {
+    my ($self, $server) = @_;
+    $self->{servers}->{$server} ||= {};
+}
+
+sub stop {
+    my ($self, $server) = @_;
+    delete $self->{servers}->{$server};
+    # $self->{servers}->{$server} = undef;
+    DEBUG "Deleted %s, result %s", $server, $self;
     return 1;
 }
 

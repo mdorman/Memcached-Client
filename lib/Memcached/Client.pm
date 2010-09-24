@@ -1,14 +1,623 @@
 package Memcached::Client;
+BEGIN {
+  $Memcached::Client::VERSION = '0.99';
+}
 # ABSTRACT: All-singing, all-dancing Perl client for Memcached
 
 use strict;
 use warnings;
 use AnyEvent qw{};
 use AnyEvent::Handle qw{};
-use Carp qw{carp};
+use Carp qw{carp cluck};
 use Memcached::Client::Connection qw{};
 use Memcached::Client::Log qw{DEBUG INFO};
 use Module::Load;
+
+
+sub new {
+    my ($class, @args) = @_;
+    my %args = 1 == scalar @args ? %{$args[0]} : @args;
+
+    # DEBUG "C: new - %s", \%args;
+
+    cluck "You declared a callback but are also expecting a return value" if ($args{callback} and defined wantarray);
+
+    my $self = bless {}, $class;
+
+    # Get all of our objects instantiated
+    $self->{serializer} = __class_loader (Serializer => $args{serializer} || 'Storable')->new;
+    $self->{selector} = __class_loader (Selector => $args{selector} || 'Traditional')->new;
+    $self->{protocol} = __class_loader (Protocol => $args{protocol} || 'Text')->new;
+
+    $self->compress_threshold ($args{compress_threshold} || 10000);
+    $self->hash_namespace ($args{hash_namespace} || 1);
+    $self->namespace ($args{namespace} || "");
+    $self->set_servers ($args{servers});
+    $self->set_preprocessor ($args{preprocessor});
+
+    $self;
+}
+
+# This manages class loading for the sub-classes
+sub __class_loader {
+    my ($prefix, $class) = @_;
+    # Add our prefixes if the class name isn't called out as absolute
+    $class = join ('::', 'Memcached::Client', $prefix, $class) if ($class !~ s/^\+//);
+    # Sanitize our class name
+    $class =~ s/[^\w:_]//g;
+    load $class;
+    $class;
+}
+
+
+sub compress_threshold {
+    my ($self, $new) = @_;
+    $self->{serializer}->compress_threshold ($new);
+}
+
+
+sub namespace {
+    my ($self, $new) = @_;
+    my $ret = $self->{namespace};
+    $self->{namespace} = $new if (defined $new);
+    return $ret;
+}
+
+
+sub hash_namespace {
+    my ($self, $new) = @_;
+    my $ret = $self->{hash_namespace};
+    $self->{hash_namespace} = !!$new if (defined $new);
+    return $ret;
+}
+
+
+sub set_preprocessor {
+    my ($self, $new) = @_;
+    $self->{preprocessor} = $new if (ref $new eq "CODE");
+    return 1;
+}
+
+
+sub __preprocess {
+    my ($self, $key) = @_;
+    return $key unless $self->{preprocessor};
+    return $self->{preprocessor}->($key);
+}
+
+
+sub set_servers {
+    my ($self, $servers) = @_;
+
+    $self->{selector}->set_servers ($servers);
+
+    # Shut down the servers that are no longer part of the list
+    my $list = {map {(ref $_ ? $_->[0] : $_), {}} @{$servers}};
+    for my $server (keys %{$self->{servers} || {}}) {
+        next if $list->{$server};
+        my $connection = delete $self->{servers}->{$server};
+        $connection->fail;
+    }
+
+    # Spawn connection handlers for all the others
+    for my $server (keys %{$list}) {
+        # DEBUG "Creating connection for %s", $server;
+        $self->{servers}->{$server} ||= Memcached::Client::Connection->new ($server, $self->{protocol}->prepare_handle);
+    }
+
+    return 1;
+}
+
+
+sub disconnect {
+    my ($self) = @_;
+
+    for my $handle (map {delete $self->{servers}->{$_}->{handle}} keys %{$self->{servers}}) {
+        next unless defined $handle;
+        eval {
+            $handle->stop_read;
+            $handle->push_shutdown();
+            $handle->destroy();
+        };
+    }
+}
+
+# When the object leaves scope, be sure to run C<disconnect()> to make
+# certain that we shut everything down.
+sub DESTROY {
+    my $self = shift;
+    $self->disconnect;
+}
+
+{
+    # This sub generates the routines that correspond to our broadcast
+    # methods---that is, those that are automatically sent to every
+    # server.  It takes the name of the command as its only parameter.
+    #
+    # It first creates an AE::cv to represent command completion.  If
+    # the command has been given a callback, and thus can assume we're
+    # in asynchronous mode, the command CV will be a proxy for that
+    # callback, otherwise we assume we're in synchronous mode, and a
+    # ->recv on the command CV will be used to drive execution of the
+    # request.
+    #
+    # For each server we know about, we increment the outstanding
+    # requests in the command CV, and enqueue a request with
+    # connection CV that has a callback that calls the connection's
+    # completion callback, stores the results, and decrements the
+    # outstanding requests.  The failback for the queue decrements the
+    # outstanding requests.
+
+    my $broadcast = sub {
+        my ($command) = @_;
+        my $subname = "__$command";
+        sub {
+            my ($self, @args) = @_;
+
+            my ($callback, $cmd_cv);
+            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+                $cmd_cv = pop @args;
+                # DEBUG "C [%s]: Found condvar", $command;
+                cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+            } elsif (ref $args[$#args] eq 'CODE') {
+                $callback = pop @args;
+                # DEBUG "C [%s]: Found callback", $command;
+                cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
+            } else {
+                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+            }
+
+            $cmd_cv ||= AE::cv;
+            $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
+
+            my (%rv);
+
+            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+            for my $connection (values %{$self->{servers}}) {
+                # DEBUG "C [%s]: enqueuing to %s", $command, $connection->{server};
+                $cmd_cv->begin;
+                $connection->enqueue (sub {
+                                          my ($handle, $completion, $server) = @_;
+                                          my $connection_cv = AE::cv {
+                                              $completion->();
+                                              $rv{$server} = $_[0]->recv;
+                                              $cmd_cv->end;
+                                          };
+                                          $self->{protocol}->$subname ($handle, $connection_cv, @args);
+                                      }, sub {$cmd_cv->end});
+            }
+            $cmd_cv->end;
+            # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
+            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
+        }
+    };
+
+    # This sub generates the routines that handle single entries.  It
+    # takes the name of the command and a default value should the
+    # request fail for some reason.
+    #
+    # It first creates an AE::cv to represent command completion.  If
+    # the command has been given a callback, and thus can assume we're
+    # in asynchronous mode, the command CV will be a proxy for that
+    # callback, otherwise we assume we're in synchronous mode, and a
+    # ->recv on the command CV will be used to drive execution of the
+    # request.
+    #
+    # If the key we've been given is hashable to a connection, we call
+    # the corresponding routine with a reference to our connection,
+    # $key and any additional arguments.  If this doesn't return a
+    # true value (further argument checks having failed, likely), we
+    # send the default response through the command CV.
+    #
+    # If the key is not hashable, we send back our default response
+    # through the command CV.
+
+    my $keyed = sub {
+        my ($command, $default) = @_;
+        my $subname = "__$command";
+        sub {
+            my ($self, @args) = @_;
+
+            my ($callback, $cmd_cv);
+            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+                $cmd_cv = pop @args;
+                # DEBUG "C [%s]: Found condvar", $command;
+                cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+            } elsif (ref $args[$#args] eq 'CODE') {
+                $callback = pop @args;
+                # DEBUG "C [%s]: Found callback", $command;
+                cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
+            } else {
+                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+            }
+
+            # Even if we're given a callback, we proxy it through a CV of our own creation
+            $cmd_cv ||= AE::cv;
+            $cmd_cv->cb (sub {$callback->($cmd_cv->recv || $default)}) if ($callback);
+
+            if (my ($key, $server) = $self->__hash (shift @args)) {
+                # DEBUG "C [%s]: %s", $command, join " ", map {defined $_ ? "[$_]" : "[undef]"} $key, @args;
+                $self->$subname ($cmd_cv, wantarray, $self->{servers}->{$server}, $key, @args) or $cmd_cv->send ($default);
+            } else {
+                $cmd_cv->send ($default);
+            }
+
+            # DEBUG "C [%s]: %s", $command, $callback ? "using callback" : "using condvar";
+            ($cmd_cv->recv || $default) unless ($callback or ($cmd_cv eq $_[$#_]));
+        }
+    };
+
+    # This sub generates the routines that handle multiple entries.
+    # That will need to be hashed individually.  It takes the name of
+    # the command as a parameter.
+    #
+    # It first creates an AE::cv to represent command completion.  If
+    # the command has been given a callback, and thus can assume we're
+    # in asynchronous mode, the command CV will be a proxy for that
+    # callback, otherwise we assume we're in synchronous mode, and a
+    # ->recv on the command CV will be used to drive execution of the
+    # request.
+    #
+    # We then the corresponding routine with a reference to our
+    # command CV all additional arguments.
+
+    my $multi = sub {
+        my ($command) = @_;
+        my $subname = "__${command}_multi";
+        sub {
+            my ($self, @args) = @_;
+
+            my ($callback, $cmd_cv);
+            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+                $cmd_cv = pop @args;
+                # DEBUG "C [%s]: Found condvar", $command;
+                cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+            } elsif (ref $args[$#args] eq 'CODE') {
+                $callback = pop @args;
+                # DEBUG "C [%s]: Found callback", $command;
+                cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
+            } else {
+                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+            }
+
+            # Even if we're given a callback, we proxy it through a CV of our own creation
+            $cmd_cv ||= AE::cv;
+            $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
+
+            # DEBUG "C: calling %s - %s", $subname, \@args;
+            $self->$subname ($cmd_cv, wantarray, @args);
+
+            # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
+            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
+        }
+    };
+
+
+    *add = $keyed->("add", 0);
+
+
+    *add_multi = $multi->("add");
+
+
+    *append = $keyed->("append", 0);
+
+
+    *append_multi = $multi->("append");
+
+
+    *decr = $keyed->("decr", undef);
+
+
+    *decr_multi = $multi->("decr");
+
+
+    *delete = $keyed->("delete", 0);
+
+
+    *delete_multi = $multi->("delete");
+
+
+    *flush_all = $broadcast->("flush_all");
+
+
+    *get = $keyed->("get", undef);
+
+
+    *get_multi = $multi->("get");
+
+
+    *incr = $keyed->("incr", undef);
+
+
+    *incr_multi = $multi->("incr");
+
+
+    *prepend = $keyed->("prepend", 0);
+
+
+    *prepend_multi = $multi->("prepend");
+
+
+    *remove = $keyed->("delete", 0);
+
+
+    *replace = $keyed->("replace", 0);
+
+
+    *replace_multi = $multi->("replace");
+
+
+    *set = $keyed->("set", 0);
+
+
+    *set_multi = $multi->("set");
+
+
+    *stats = $broadcast->("stats");
+
+
+    *version = $broadcast->("version");
+}
+
+# We use this routine to select our server---it uses the selector to
+# hash the key (assuming we are given a valid key, which it checks)
+# and choose a machine.
+
+sub __hash {
+    my ($self, $key) = @_;
+    $key = $self->{preprocessor}->($key) if ($self->{preprocessor});
+    return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+    return ($key, $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : ""));
+}
+
+{
+    my $generator = sub {
+        my ($command) = (@_);
+        my $subname = "__$command";
+        return sub {
+            my ($self, $cmd_cv, $wantarray, $connection, $key, $value, $expiration) = @_;
+            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            $expiration = int ($expiration || 0);
+            return unless (defined $value);
+            $connection->enqueue (sub {
+                                      my ($handle, $completion, $server) = @_;
+                                      my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
+                                      my $server_cv = AE::cv {
+                                          $completion->();
+                                          $cmd_cv->send ($_[0]->recv);
+                                      };
+                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
+                                  }, $cmd_cv);
+        }
+    };
+
+    *__add     = $generator->("add");
+    *__append  = $generator->("append");
+    *__prepend = $generator->("prepend");
+    *__replace = $generator->("replace");
+    *__set     = $generator->("set");
+}
+
+{
+    my $generator = sub {
+        my ($command) = (@_);
+        my $subname = "__$command";
+        return sub {
+            my ($self, $cmd_cv, $wantarray, $tuples) = @_;
+            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            my (%rv);
+            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+            # DEBUG "Tuples are %s", $tuples;
+            for my $tuple (@{$tuples}) {
+                # DEBUG "Tuple is %s", $tuple;
+                if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
+                    my ($value, $expiration) = @{$tuple};
+                    $expiration = int ($expiration || 0);
+                    $rv{$key} = 0;
+                    # DEBUG "C: $command %s", $server;
+                    $cmd_cv->begin;
+                    $self->{servers}->{$server}->enqueue (sub {
+                                                              my ($handle, $completion, $server) = @_;
+                                                              my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
+                                                              my $server_cv = AE::cv {
+                                                                  $completion->();
+                                                                  $rv{$key} = $_[0]->recv;
+                                                                  $cmd_cv->end;
+                                                              };
+                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
+                                                          }, sub {$cmd_cv->end});
+                }
+            }
+            $cmd_cv->end;
+        }
+    };
+
+    *__add_multi     = $generator->("add");
+    *__append_multi  = $generator->("append");
+    *__prepend_multi = $generator->("prepend");
+    *__replace_multi = $generator->("replace");
+    *__set_multi     = $generator->("set");
+}
+
+{
+    my $generator = sub {
+        my ($command) = (@_);
+        my $subname = "__$command";
+        return sub {
+            my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
+            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            $delta //= 1;
+            $connection->enqueue (sub {
+                                      my ($handle, $completion, $server) = @_;
+                                      my $server_cv = AE::cv {
+                                          $completion->();
+                                          $cmd_cv->send ($_[0]->recv);
+                                      };
+                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
+                                  }, $cmd_cv);
+        }
+    };
+
+    *__decr = $generator->("decr");
+    *__incr = $generator->("incr");
+}
+
+{
+    my $generator = sub {
+        my ($command) = (@_);
+        my $subname = "__$command";
+        return sub {
+            my ($self, $cmd_cv, $wantarray, $tuples) = @_;
+            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            my (%rv);
+            # DEBUG "Begin on command CV to establish callback";
+            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+            # DEBUG "Tuples are %s", $tuples;
+            for my $tuple (@{$tuples}) {
+                # DEBUG "Tuple is %s", $tuple;
+                if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
+                    # DEBUG "keys is %s, server is %s", $key, $server;
+                    my ($delta, $initial) = @{$tuple};
+                    $delta //= 1;
+                    # DEBUG "C: $command %s", $server;
+                    # DEBUG "Begin on command CV before enqueue";
+                    $cmd_cv->begin;
+                    $self->{servers}->{$server}->enqueue (sub {
+                                                              my ($handle, $completion, $server) = @_;
+                                                              my $server_cv = AE::cv {
+                                                                  $completion->();
+                                                                  $rv{$key} = $_[0]->recv;
+                                                                  # DEBUG "End on command CV from server CV";
+                                                                  $cmd_cv->end;
+                                                              };
+                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
+                                                          }, sub {
+                                                              # DEBUG "End on command CV from error callback";
+                                                              $cmd_cv->end
+                                                          });
+                }
+            }
+
+            # DEBUG "End on command CV ";
+            $cmd_cv->end;
+        }
+    };
+
+    *__incr_multi = $generator->("incr");
+    *__decr_multi = $generator->("decr");
+}
+
+sub __delete {
+    my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
+    # DEBUG "C [delete]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    $connection->enqueue (sub {
+                              my ($handle, $completion, $server) = @_;
+                              my $server_cv = AE::cv {
+                                  $completion->();
+                                  $cmd_cv->send ($_[0]->recv);
+                              };
+                              $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
+                          }, $cmd_cv);
+}
+
+sub __delete_multi {
+    my ($self, $cmd_cv, $wantarray, @keys) = @_;
+    # DEBUG "C [delete_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    my (%rv);
+    $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+    # DEBUG "Keys are %s", \@keys;
+    for my $key (@keys) {
+        if (my ($key, $server) = $self->__hash ($key)) {
+            # DEBUG "key is %s", $key;
+            $rv{$key} = 0;
+            # DEBUG "C: delete_multi %s", $server;
+            $cmd_cv->begin;
+            $self->{servers}->{$server}->enqueue (sub {
+                                                      my ($handle, $completion, $server) = @_;
+                                                      my $server_cv = AE::cv {
+                                                          $completion->();
+                                                          $rv{$key} = $_[0]->recv;
+                                                          $cmd_cv->end;
+                                                      };
+                                                      $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
+                                                  }, sub {$cmd_cv->end});
+        }
+    }
+    $cmd_cv->end;
+}
+
+sub __get {
+    my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
+    # DEBUG "C [get]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    $connection->enqueue (sub {
+                              my ($handle, $completion, $server) = @_;
+                              my $server_cv = AE::cv {
+                                  $completion->();
+                                  if (my $result = $_[0]->recv) {
+                                      # DEBUG "C: get - result %s", $result;
+                                      my $gotten = $result->{$self->{namespace} . (ref $key ? $key->[1] : $key)};
+                                      $cmd_cv->send ($self->{serializer}->deserialize (@{$gotten}{qw{data flags}}));
+                                  } else {
+                                      $cmd_cv->send;
+                                  }
+                              };
+                              $self->{protocol}->__get ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
+                          }, $cmd_cv);
+}
+
+sub __get_multi {
+    my ($self, $cmd_cv, $wantarray, $keys) = @_;
+    # DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    my (%requests);
+    for my $key (@{$keys}) {
+        if (my ($key, $server) = $self->__hash ($key)) {
+            push @{$requests{$server}}, $self->{namespace} . (ref $key ? $key->[1] : $key);
+        }
+    }
+
+    my (%rv);
+    $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+    for my $server (keys %requests) {
+        # DEBUG "C: get %s", $server;
+        $cmd_cv->begin;
+        $self->{servers}->{$server}->enqueue (sub {
+                                                  my ($handle, $completion, $server) = @_;
+                                                  my $server_cv = AE::cv {
+                                                      $completion->();
+                                                      if (my $result = $_[0]->recv) {
+                                                          # DEBUG "C: get - result %s", $result;
+                                                          for my $key (keys %{$result}) {
+                                                              next unless (defined $key and length $key);
+                                                              my $stripped = substr $key, length $self->{namespace};
+                                                              my $deserialized = $self->{serializer}->deserialize (@{$result->{$key}}{qw{data flags}});
+                                                              next unless defined $deserialized;
+                                                              $rv{$stripped} = $deserialized;
+                                                          }
+                                                      }
+                                                      $cmd_cv->end;
+                                                  };
+                                                  $self->{protocol}->__get ($handle, $server_cv, @{$requests{$server}});
+                                              }, sub {$cmd_cv->end});
+    }
+    $cmd_cv->end;
+}
+
+
+1;
+
+__END__
+=pod
+
+=head1 NAME
+
+Memcached::Client - All-singing, all-dancing Perl client for Memcached
+
+=head1 VERSION
+
+version 0.99
 
 =head1 SYNOPSIS
 
@@ -52,7 +661,9 @@ serialization and compression---it currently implements the
 traditional Cache::Memcached hashing, both text and binary protocols,
 and serialization using Storable, and compression using gzip.
 
-=method new
+=head1 METHODS
+
+=head2 new
 
 C<new> takes a hash or a hashref containing any or all of the
 following parameters, to define various aspects of the behavior of the
@@ -77,6 +688,20 @@ hashing.  This is not defined by default.
 This parameter is only made available for compatiblity with
 Cache::Memcached, and is ignored.  Memcached::Client will never
 rehash.
+
+=item C<preprocessor> => C<undef>
+
+This allows you to set a preprocessor routine to normalize all keys
+before they're sent to the server.  Expects a coderef that will
+transform its first argument and then return it.  The identity
+preprocessor would be:
+
+ sub {
+     return $_[0];
+ }
+
+This can be useful for mapping keys to a consistent case or encoding
+them as to allow spaces in keys or the like.
 
 =item C<procotol> => C<Text>
 
@@ -136,113 +761,40 @@ the absence of a weight specification, it is assumed to be C<1>.
 
 =back
 
-=cut
-
-sub new {
-    my ($class, @args) = @_;
-    my %args = 1 == scalar @args ? %{$args[0]} : @args;
-
-    # DEBUG "C: new - %s", \%args;
-
-    carp "You declared a callback but are also expecting a return value" if ($args{callback} and defined wantarray);
-
-    my $self = bless {}, $class;
-
-    # Get all of our objects instantiated
-    $self->{serializer} = __class_loader (Serializer => $args{serializer} || 'Storable')->new;
-    $self->{selector} = __class_loader (Selector => $args{selector} || 'Traditional')->new;
-    $self->{protocol} = __class_loader (Protocol => $args{protocol} || 'Text')->new;
-
-    $self->compress_threshold ($args{compress_threshold} || 10000);
-    $self->hash_namespace ($args{hash_namespace} || 1);
-    $self->namespace ($args{namespace} || "");
-    $self->set_servers ($args{servers});
-
-    $self;
-}
-
-# This manages class loading for the sub-classes
-sub __class_loader {
-    my ($prefix, $class) = @_;
-    # Add our prefixes if the class name isn't called out as absolute
-    $class = join ('::', 'Memcached::Client', $prefix, $class) if ($class !~ s/^\+//);
-    # Sanitize our class name
-    $class =~ s/[^\w:_]//g;
-    load $class;
-    $class;
-}
-
-=method compress_threshold
+=head2 compress_threshold
 
 This routine returns the current compress_threshold, and sets it to
 the new value if it's handed one.
 
-=cut
-
-sub compress_threshold {
-    my ($self, $new) = @_;
-    $self->{serializer}->compress_threshold ($new);
-}
-
-=method namespace
+=head2 namespace
 
 This routine returns the current namespace, and sets it to the new
 value if it's handed one.
 
-=cut
-
-sub namespace {
-    my ($self, $new) = @_;
-    my $ret = $self->{namespace};
-    $self->{namespace} = $new if (defined $new);
-    return $ret;
-}
-
-=method hash_namespace
+=head2 hash_namespace
 
 Whether to prepend the namespace to the key before hashing, or after
 
 This routine returns the current setting, and sets it to the new value
 if it's handed one.
 
-=cut
+=head2 set_preprocessor
 
-sub hash_namespace {
-    my ($self, $new) = @_;
-    my $ret = $self->{hash_namespace};
-    $self->{hash_namespace} = !!$new if (defined $new);
-    return $ret;
-}
+Sets a routine to preprocess keys before they are transmitted.
 
-=method set_servers()
+If you want to do some transformation to all keys before they hit the
+wire, give this a subroutine reference and it will be run across all
+keys.
+
+=head2 __preprocess
+
+Preprocess keys before they are transmitted.
+
+=head2 set_servers()
 
 Change the list of servers to the listref handed to the function.
 
-=cut
-
-sub set_servers {
-    my ($self, $servers) = @_;
-
-    $self->{selector}->set_servers ($servers);
-
-    # Shut down the servers that are no longer part of the list
-    my $list = {map {(ref $_ ? $_->[0] : $_), {}} @{$servers}};
-    for my $server (keys %{$self->{servers} || {}}) {
-        next if $list->{$server};
-        my $connection = delete $self->{servers}->{$server};
-        $connection->fail;
-    }
-
-    # Spawn connection handlers for all the others
-    for my $server (keys %{$list}) {
-        # DEBUG "Creating connection for %s", $server;
-        $self->{servers}->{$server} ||= Memcached::Client::Connection->new ($server, $self->{protocol}->prepare_handle);
-    }
-
-    return 1;
-}
-
-=method disconnect()
+=head2 disconnect()
 
 Immediately disconnect from all handles and shutdown everything.
 
@@ -250,195 +802,233 @@ While connections are implicitly made upon first need, and thus are
 invisible to the user, there are circumstances where it can be
 important to call C<disconnect()> explicitly.
 
-=cut
+=head2 add
 
-sub disconnect {
-    my ($self) = @_;
+[$rc = ] add ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
 
-    for my $handle (map {delete $self->{servers}->{$_}->{handle}} keys %{$self->{servers}}) {
-        next unless defined $handle;
-        eval {
-            $handle->stop_read;
-            $handle->push_shutdown();
-            $handle->destroy();
-        };
-    }
-}
+If the specified key does not already exist in the cache, it will be
+set to the specified value.  If an expiration is included, it will
+determine the lifetime of the object on the server.
 
-# When the object leaves scope, be sure to run C<disconnect()> to make
-# certain that we shut everything down.
-sub DESTROY {
-    my $self = shift;
-    $self->disconnect;
-}
+If the add succeeds, 1 will be returned, if it fails, 0 will be
+returned.
 
-{
-    # This sub generates the routines that correspond to our broadcast
-    # methods---that is, those that are automatically sent to every
-    # server.  It takes the name of the command as its only parameter.
-    #
-    # It first creates an AE::cv to represent command completion.  If
-    # the command has been given a callback, and thus can assume we're
-    # in asynchronous mode, the command CV will be a proxy for that
-    # callback, otherwise we assume we're in synchronous mode, and a
-    # ->recv on the command CV will be used to drive execution of the
-    # request.
-    #
-    # For each server we know about, we increment the outstanding
-    # requests in the command CV, and enqueue a request with
-    # connection CV that has a callback that calls the connection's
-    # completion callback, stores the results, and decrements the
-    # outstanding requests.  The failback for the queue decrements the
-    # outstanding requests.
+=head2 add_multi
 
-    my $broadcast = sub {
-        my ($command) = @_;
-        my $subname = "__$command";
-        sub {
-            my ($self, @args) = @_;
+[$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
 
-            my ($callback, $cmd_cv);
-            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
-                $cmd_cv = pop @args;
-                # DEBUG "C [%s]: Found condvar", $command;
-                carp "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-            } elsif (ref $args[$#args] eq 'CODE') {
-                $callback = pop @args;
-                # DEBUG "C [%s]: Found callback", $command;
-                carp "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
-                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                carp "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
-            }
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and if the specified key does not already exist in the cache, it will
+be set to the specified value.  If an expiration is included, it will
+determine the lifetime of the object on the server.
 
-            $cmd_cv ||= AE::cv;
-            $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
+Returns a hashref of [key, boolean] tuples, where 1 means the add
+succeeded, 0 means it failed.
 
-            my (%rv);
+=head2 append
 
-            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-            for my $connection (values %{$self->{servers}}) {
-                # DEBUG "C [%s]: enqueuing to %s", $command, $connection->{server};
-                $cmd_cv->begin;
-                $connection->enqueue (sub {
-                                          my ($handle, $completion, $server) = @_;
-                                          my $connection_cv = AE::cv {
-                                              $completion->();
-                                              $rv{$server} = $_[0]->recv;
-                                              $cmd_cv->end;
-                                          };
-                                          $self->{protocol}->$subname ($handle, $connection_cv, @args);
-                                      }, sub {$cmd_cv->end});
-            }
-            $cmd_cv->end;
-            # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
-            $cmd_cv->recv unless ($callback);
-        }
-    };
+[$rc = ] append ($key, $value[, $cb-E<gt>($rc) || $cv])
 
-    # This sub generates the routines that handle single entries.  It
-    # takes the name of the command and a default value should the
-    # request fail for some reason.
-    #
-    # It first creates an AE::cv to represent command completion.  If
-    # the command has been given a callback, and thus can assume we're
-    # in asynchronous mode, the command CV will be a proxy for that
-    # callback, otherwise we assume we're in synchronous mode, and a
-    # ->recv on the command CV will be used to drive execution of the
-    # request.
-    #
-    # If the key we've been given is hashable to a connection, we call
-    # the corresponding routine with a reference to our connection,
-    # $key and any additional arguments.  If this doesn't return a
-    # true value (further argument checks having failed, likely), we
-    # send the default response through the command CV.
-    #
-    # If the key is not hashable, we send back our default response
-    # through the command CV.
+If the specified key already exists in the cache, it will have the
+specified content appended to it.
 
-    my $keyed = sub {
-        my ($command, $default) = @_;
-        my $subname = "__$command";
-        sub {
-            my ($self, @args) = @_;
+If the append succeeds, 1 will be returned, if it fails, 0 will be
+returned.
 
-            my ($callback, $cmd_cv);
-            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
-                $cmd_cv = pop @args;
-                # DEBUG "C [%s]: Found condvar", $command;
-                carp "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-            } elsif (ref $args[$#args] eq 'CODE') {
-                $callback = pop @args;
-                # DEBUG "C [%s]: Found callback", $command;
-                carp "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
-                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                carp "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
-            }
+=head2 append_multi
 
-            # Even if we're given a callback, we proxy it through a CV of our own creation
-            $cmd_cv ||= AE::cv;
-            $cmd_cv->cb (sub {$callback->($cmd_cv->recv || $default)}) if ($callback);
+[$rc = ] append_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
 
-            my ($key) = shift @args;
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and if the specified key already exists in the cache, it will have the
+the specified value appended to it.  If an expiration is included, it
+will determine the lifetime of the object on the server.
 
-            if (my $server = $self->__hash ($key)) {
-                # DEBUG "C [%s]: %s", $command, join " ", map {defined $_ ? "[$_]" : "[undef]"} $key, @args;
-                $self->$subname ($cmd_cv, wantarray, $self->{servers}->{$server}, $key, @args) or $cmd_cv->send ($default);
-            } else {
-                $cmd_cv->send ($default);
-            }
+Returns a hashref of [key, boolean] tuples, where 1 means the add
+succeeded, 0 means it failed.
 
-            # DEBUG "C [%s]: %s", $command, $callback ? "using callback" : "using condvar";
-            ($cmd_cv->recv || $default) unless ($callback);
-        }
-    };
+=head2 decr
 
-    # This sub generates the routines that handle multiple entries.
-    # That will need to be hashed individually.  It takes the name of
-    # the command as a parameter.
-    #
-    # It first creates an AE::cv to represent command completion.  If
-    # the command has been given a callback, and thus can assume we're
-    # in asynchronous mode, the command CV will be a proxy for that
-    # callback, otherwise we assume we're in synchronous mode, and a
-    # ->recv on the command CV will be used to drive execution of the
-    # request.
-    #
-    # We then the corresponding routine with a reference to our
-    # command CV all additional arguments.
+[$value = ] decr ($key, [$delta (= 1), $initial, $cb-E<gt>($value) || $cv])
 
-    my $multi = sub {
-        my ($command) = @_;
-        my $subname = "__$command";
-        sub {
-            my ($self, @args) = @_;
+If the specified key already exists in the cache, it will be
+decremented by the specified delta value, or 1 if no delta is
+specified.
 
-            my ($callback, $cmd_cv);
-            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
-                $cmd_cv = pop @args;
-                # DEBUG "C [%s]: Found condvar", $command;
-                carp "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-            } elsif (ref $args[$#args] eq 'CODE') {
-                $callback = pop @args;
-                # DEBUG "C [%s]: Found callback", $command;
-                carp "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
-                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                carp "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
-            }
+If the value does not exist in the cache, and an initial value is
+supplied, the key will be set to that value.
 
-            # Even if we're given a callback, we proxy it through a CV of our own creation
-            $cmd_cv ||= AE::cv;
-            $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
+If the decr succeeds, the resulting value will be returned, otherwise
+undef will be the result.
 
-            # DEBUG "C: calling %s - %s", $subname, \@args;
-            $self->$subname ($cmd_cv, wantarray, @args);
+=head2 decr_multi
 
-            # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
-            $cmd_cv->recv unless ($callback);
-        }
-    };
+[$value = ] decr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
+
+If the specified key already exists in the cache, it will be
+decremented by the specified delta value, or 1 if no delta is
+specified.
+
+If the value does not exist in the cache, and an initial value is
+supplied, the key will be set to that value.
+
+If the decr succeeds, the resulting value will be returned, otherwise
+undef will be the result.
+
+=head2 delete
+
+[$rc = ] delete ($key, [$cb-E<gt>($rc) || $cv])
+
+If the specified key exists in the cache, it will be deleted.
+
+If the delete succeeds, 1 will be returned, otherwise 0 will be the
+result.
+
+=head2 delete_multi
+
+[\%keys = ] delete_multi (@keys, [$cb-E<gt>($rc) || $cv])
+
+For each key specified, if the specified key exists in the cache, it
+will be deleted.
+
+If the delete succeeds, 1 will be returned, otherwise 0 will be the
+result.
+
+=head2 flush_all
+
+[\%servers = ] flush_all ([$cb-E<gt>(\%servers) || $cv])
+
+Clears the keys on each memcached server.
+
+Returns a hashref indicating which servers the flush succeeded on.
+
+=head2 get
+
+[$value = ] get ($key, [$cb-E<gt>($value) || $cv])
+
+Retrieves the specified key from the cache, otherwise returning undef.
+
+=head2 get_multi
+
+[\%values = ] get_multi (@values, [$cb-E<gt>(\%values) || $cv])
+
+Retrieves the specified keys from the cache, returning a hashref of
+key => value pairs.
+
+=head2 incr
+
+[$value = ] incr ($key, [$delta (= 1), $initial, $cb-E<gt>($value) || $cv])
+
+If the specified key already exists in the cache, it will be
+incremented by the specified delta value, or 1 if no delta is
+specified.
+
+If the value does not exist in the cache, and an initial value is
+supplied, the key will be set to that value.
+
+If the incr succeeds, the resulting value will be returned, otherwise
+undef will be the result.
+
+=head2 incr_multi
+
+[$value = ] incr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
+
+If the specified key already exists in the cache, it will be
+incremented by the specified delta value, or 1 if no delta is
+specified.
+
+If the value does not exist in the cache, and an initial value is
+supplied, the key will be set to that value.
+
+If the incr succeeds, the resulting value will be returned, otherwise
+undef will be the result.
+
+=head2 prepend($key, $value, $cb->($rc));
+
+[$rc = ] append ($key, $value[, $cb-E<gt>($rc) || $cv])
+
+If the specified key already exists in the cache, it will have the
+specified content prepended to it.
+
+If the prepend succeeds, 1 will be returned, if it fails, 0 will be
+returned.
+
+=head2 prepend_multi
+
+[$rc = ] prepend_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and if the specified key already exists in the cache, it will have the
+the specified value prepended to it.  If an expiration is included, it
+will determine the lifetime of the object on the server.
+
+Returns a hashref of [key, boolean] tuples, where 1 means the add
+succeeded, 0 means it failed.
+
+=head2 remove
+
+Alias to delete
+
+=head2 replace
+
+[$rc = ] replace ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
+
+If the specified key already exists in the cache, it will be replaced
+by the specified value.  If it doesn't already exist, nothing will
+happen.  If an expiration is included, it will determine the lifetime
+of the object on the server.
+
+If the replace succeeds, 1 will be returned, if it fails, 0 will be
+returned.
+
+=head2 replace_multi
+
+[$rc = ] replace_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and if the specified key already exists in the cache, it will be set
+to the specified value.  If an expiration is included, it will
+determine the lifetime of the object on the server.
+
+Returns a hashref of [key, boolean] tuples, where 1 means the replace
+succeeded, 0 means it failed.
+
+=head2 set()
+
+[$rc = ] set ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
+
+Set the specified key to the specified value.  If an expiration is
+included, it will determine the lifetime of the object on the server.
+
+If the set succeeds, 1 will be returned, if it fails, 0 will be
+returned.
+
+=head2 set_multi
+
+[$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+
+Given an arrayref of [key, value, $exptime] tuples, iterate over them
+and set the specified key to the specified value.  If an expiration is
+included, it will determine the lifetime of the object on the server.
+
+Returns a hashref of [key, boolean] tuples, where 1 means the set
+succeeded, 0 means it failed.
+
+=head2 stats ()
+
+[\%stats = ] stats ([$name, $cb-E<gt>(\%stats) || $cv])
+
+Retrieves stats from all memcached servers.
+
+Returns a hashref of hashrefs with the named stats.
+
+=head2 version()
+
+[\%versions = ] stats ([$cb-E<gt>(\%versions) || $cv])
+
+Retrieves the version number from all memcached servers.
+
+Returns a hashref of server => version pairs.
 
 =head1 METHODS (INTERACTION)
 
@@ -464,495 +1054,6 @@ that an event loop is run...otherwise your program will simply hang.
 
 If you call a method in an asynchronous fashion, but you are also
 expecting a return value, a warning will be raised.
-
-=method add
-
-[$rc = ] add ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
-
-If the specified key does not already exist in the cache, it will be
-set to the specified value.  If an expiration is included, it will
-determine the lifetime of the object on the server.
-
-If the add succeeds, 1 will be returned, if it fails, 0 will be
-returned.
-
-=cut
-
-    *add = $keyed->("add", 0);
-
-=method add_multi
-
-[$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
-
-Given an arrayref of [key, value, $exptime] tuples, iterate over them
-and if the specified key does not already exist in the cache, it will
-be set to the specified value.  If an expiration is included, it will
-determine the lifetime of the object on the server.
-
-Returns a hashref of [key, boolean] tuples, where 1 means the add
-succeeded, 0 means it failed.
-
-=cut
-
-    *add_multi = $multi->("add_multi");
-
-=method append
-
-[$rc = ] append ($key, $value[, $cb-E<gt>($rc) || $cv])
-
-If the specified key already exists in the cache, it will have the
-specified content appended to it.
-
-If the append succeeds, 1 will be returned, if it fails, 0 will be
-returned.
-
-=cut
-
-    *append = $keyed->("append", 0);
-
-=method append_multi
-
-[$rc = ] append_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
-
-Given an arrayref of [key, value, $exptime] tuples, iterate over them
-and if the specified key already exists in the cache, it will have the
-the specified value appended to it.  If an expiration is included, it
-will determine the lifetime of the object on the server.
-
-Returns a hashref of [key, boolean] tuples, where 1 means the add
-succeeded, 0 means it failed.
-
-=cut
-
-    *append_multi = $multi->("append_multi");
-
-=method decr
-
-[$value = ] decr ($key, [$delta (= 1), $initial, $cb-E<gt>($value) || $cv])
-
-If the specified key already exists in the cache, it will be
-decremented by the specified delta value, or 1 if no delta is
-specified.
-
-If the value does not exist in the cache, and an initial value is
-supplied, the key will be set to that value.
-
-If the decr succeeds, the resulting value will be returned, otherwise
-undef will be the result.
-
-=cut
-
-    *decr = $keyed->("decr", undef);
-
-=method decr_multi
-
-[$value = ] decr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
-
-If the specified key already exists in the cache, it will be
-decremented by the specified delta value, or 1 if no delta is
-specified.
-
-If the value does not exist in the cache, and an initial value is
-supplied, the key will be set to that value.
-
-If the decr succeeds, the resulting value will be returned, otherwise
-undef will be the result.
-
-=cut
-
-    *decr_multi = $multi->("decr");
-
-=method delete
-
-[$rc = ] delete ($key, [$cb-E<gt>($rc) || $cv])
-
-If the specified key exists in the cache, it will be deleted.
-
-If the delete succeeds, 1 will be returned, otherwise 0 will be the
-result.
-
-=cut
-
-    *delete = $keyed->("delete", 0);
-
-=method delete_multi
-
-[\%keys = ] delete_multi (@keys, [$cb-E<gt>($rc) || $cv])
-
-For each key specified, if the specified key exists in the cache, it
-will be deleted.
-
-If the delete succeeds, 1 will be returned, otherwise 0 will be the
-result.
-
-=cut
-
-    *delete_multi = $multi->("delete_multi");
-
-=method flush_all
-
-[\%servers = ] flush_all ([$cb-E<gt>(\%servers) || $cv])
-
-Clears the keys on each memcached server.
-
-Returns a hashref indicating which servers the flush succeeded on.
-
-=cut
-
-    *flush_all = $broadcast->("flush_all");
-
-=method get
-
-[$value = ] get ($key, [$cb-E<gt>($value) || $cv])
-
-Retrieves the specified key from the cache, otherwise returning undef.
-
-=cut
-
-    *get = $keyed->("get", undef);
-
-=method get_multi
-
-[\%values = ] get_multi (@values, [$cb-E<gt>(\%values) || $cv])
-
-Retrieves the specified keys from the cache, returning a hashref of
-key => value pairs.
-
-=cut
-
-    *get_multi = $multi->("get_multi");
-
-=method incr
-
-[$value = ] incr ($key, [$delta (= 1), $initial, $cb-E<gt>($value) || $cv])
-
-If the specified key already exists in the cache, it will be
-incremented by the specified delta value, or 1 if no delta is
-specified.
-
-If the value does not exist in the cache, and an initial value is
-supplied, the key will be set to that value.
-
-If the incr succeeds, the resulting value will be returned, otherwise
-undef will be the result.
-
-=cut
-
-    *incr = $keyed->("incr", undef);
-
-=method prepend($key, $value, $cb->($rc));
-
-[$rc = ] append ($key, $value[, $cb-E<gt>($rc) || $cv])
-
-If the specified key already exists in the cache, it will have the
-specified content prepended to it.
-
-If the prepend succeeds, 1 will be returned, if it fails, 0 will be
-returned.
-
-=cut
-
-    *prepend = $keyed->("prepend", 0);
-
-=method remove
-
-Alias to delete
-
-=cut
-
-    *remove = $keyed->("delete", 0);
-
-=method replace
-
-[$rc = ] replace ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
-
-If the specified key already exists in the cache, it will be replaced
-by the specified value.  If it doesn't already exist, nothing will
-happen.  If an expiration is included, it will determine the lifetime
-of the object on the server.
-
-If the replace succeeds, 1 will be returned, if it fails, 0 will be
-returned.
-
-=cut
-
-    *replace = $keyed->("replace", 0);
-
-=method set()
-
-[$rc = ] set ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
-
-If the specified key does not already exist in the cache, it will be
-set to the specified value.  If an expiration is included, it will
-determine the lifetime of the object on the server.
-
-If the add succeeds, 1 will be returned, if it fails, 0 will be
-returned.
-
-=cut
-
-    *set = $keyed->("set", 0);
-
-=method stats ()
-
-[\%stats = ] stats ([$name, $cb-E<gt>(\%stats) || $cv])
-
-Retrieves stats from all memcached servers.
-
-Returns a hashref of hashrefs with the named stats.
-
-=cut
-
-    *stats = $broadcast->("stats");
-
-=method version()
-
-[\%versions = ] stats ([$cb-E<gt>(\%versions) || $cv])
-
-Retrieves the version number from all memcached servers.
-
-Returns a hashref of server => version pairs.
-
-=cut
-
-    *version = $broadcast->("version");
-}
-
-# We use this routine to select our server---it uses the selector to
-# hash the key (assuming we are given a valid key, which it checks)
-# and choose a machine.
-
-sub __hash {
-    my ($self, $key) = @_;
-    return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
-    return $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "");
-}
-
-{
-    my $generator = sub {
-        my ($command) = (@_);
-        my $subname = "__$command";
-        return sub {
-            my ($self, $cmd_cv, $wantarray, $connection, $key, $value, $expiration) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-            $expiration = int ($expiration || 0);
-            return unless (defined $value);
-            $connection->enqueue (sub {
-                                      my ($handle, $completion, $server) = @_;
-                                      my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
-                                      my $server_cv = AE::cv {
-                                          $completion->();
-                                          $cmd_cv->send ($_[0]->recv);
-                                      };
-                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
-                                  }, $cmd_cv);
-        }
-    };
-
-    *__add     = $generator->("add");
-    *__append  = $generator->("append");
-    *__prepend = $generator->("prepend");
-    *__replace = $generator->("replace");
-    *__set     = $generator->("set");
-}
-
-{
-    my $generator = sub {
-        my ($command) = (@_);
-        my $subname = "__$command";
-        return sub {
-            my ($self, $cmd_cv, $wantarray, $tuples) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-            my (%rv);
-            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-            # DEBUG "Tuples are %s", $tuples;
-            for my $tuple (@{$tuples}) {
-                # DEBUG "Tuple is %s", $tuple;
-                my ($key, $value, $expiration) = @{$tuple};
-                $expiration = int ($expiration || 0);
-                $rv{$key} = 0;
-                if (my $server = $self->__hash ($key)) {
-                    # DEBUG "C: $command %s", $server;
-                    $cmd_cv->begin;
-                    $self->{servers}->{$server}->enqueue (sub {
-                                                              my ($handle, $completion, $server) = @_;
-                                                              my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
-                                                              my $server_cv = AE::cv {
-                                                                  $completion->();
-                                                                  $rv{$key} = $_[0]->recv;
-                                                                  $cmd_cv->end;
-                                                              };
-                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
-                                                          }, sub {$cmd_cv->end});
-                }
-
-                $cmd_cv->end;
-            }
-        }
-    };
-
-    *__add_multi     = $generator->("add");
-    *__append_multi  = $generator->("append");
-    *__prepend_multi = $generator->("prepend");
-    *__replace_multi = $generator->("replace");
-    *__set_multi     = $generator->("set");
-}
-
-{
-    my $generator = sub {
-        my ($command) = (@_);
-        my $subname = "__$command";
-        return sub {
-            my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-            $delta //= 1;
-            $connection->enqueue (sub {
-                                      my ($handle, $completion, $server) = @_;
-                                      my $server_cv = AE::cv {
-                                          $completion->();
-                                          $cmd_cv->send ($_[0]->recv);
-                                      };
-                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
-                                  }, $cmd_cv);
-        }
-    };
-
-    *__decr = $generator->("decr");
-    *__incr = $generator->("incr");
-}
-
-{
-    my $generator = sub {
-        my ($command) = (@_);
-        my $subname = "__$command";
-        return sub {
-            my ($self, $cmd_cv, $wantarray, $tuples) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-            my (%rv);
-            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-            # DEBUG "Tuples are %s", $tuples;
-            for my $tuple (@{$tuples}) {
-                # DEBUG "Tuple is %s", $tuple;
-                my ($key, $delta, $initial) = @{$tuple};
-                $rv{$key} = 0;
-                if (my $server = $self->__hash ($key)) {
-                    # DEBUG "C: $command %s", $server;
-                    $cmd_cv->begin;
-                    $self->{servers}->{$server}->enqueue (sub {
-                                                              my ($handle, $completion, $server) = @_;
-                                                              my $server_cv = AE::cv {
-                                                                  $completion->();
-                                                                  $rv{$key} = $_[0]->recv;
-                                                                  $cmd_cv->end;
-                                                              };
-                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
-                                                          }, sub {$cmd_cv->end});
-                }
-
-                $cmd_cv->end;
-            }
-        }
-    };
-
-    *__incr_multi = $generator->("incr");
-    *__decr_multi = $generator->("append");
-}
-
-sub __delete {
-    my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
-    # DEBUG "C [delete]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-    $connection->enqueue (sub {
-                              my ($handle, $completion, $server) = @_;
-                              my $server_cv = AE::cv {
-                                  $completion->();
-                                  $cmd_cv->send ($_[0]->recv);
-                              };
-                              $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
-                          }, $cmd_cv);
-}
-
-sub __delete_multi {
-    my ($self, $cmd_cv, $wantarray, @keys) = @_;
-    # DEBUG "C [delete_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-    my (%rv);
-    $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-    # DEBUG "Keys are %s", \@keys;
-    for my $key (@keys) {
-        # DEBUG "key is %s", $key;
-        $rv{$key} = 0;
-        if (my $server = $self->__hash ($key)) {
-            # DEBUG "C: delete_multi %s", $server;
-            $cmd_cv->begin;
-            $self->{servers}->{$server}->enqueue (sub {
-                                                      my ($handle, $completion, $server) = @_;
-                                                      my $server_cv = AE::cv {
-                                                          $completion->();
-                                                          $rv{$key} = $_[0]->recv;
-                                                          $cmd_cv->end;
-                                                      };
-                                                      $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
-                                                  }, sub {$cmd_cv->end});
-        }
-
-        $cmd_cv->end;
-    }
-}
-
-sub __get {
-    my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
-    # DEBUG "C [get]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-    $connection->enqueue (sub {
-                              my ($handle, $completion, $server) = @_;
-                              my $server_cv = AE::cv {
-                                  $completion->();
-                                  if (my $result = $_[0]->recv) {
-                                      # DEBUG "C: get - result %s", $result;
-                                      my $gotten = $result->{$self->{namespace} . (ref $key ? $key->[1] : $key)};
-                                      $cmd_cv->send ($self->{serializer}->deserialize (@{$gotten}{qw{data flags}}));
-                                  } else {
-                                      $cmd_cv->send;
-                                  }
-                              };
-                              $self->{protocol}->__get ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
-                          }, $cmd_cv);
-}
-
-sub __get_multi {
-    my ($self, $cmd_cv, $wantarray, $keys) = @_;
-    # DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-    my (%requests);
-    for my $key (@{$keys}) {
-        if (my $server = $self->__hash ($key)) {
-            push @{$requests{$server}}, $self->{namespace} . (ref $key ? $key->[1] : $key);
-        }
-    }
-
-    my (%rv);
-    $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-    for my $server (keys %requests) {
-        # DEBUG "C: get %s", $server;
-        $cmd_cv->begin;
-        $self->{servers}->{$server}->enqueue (sub {
-                                                  my ($handle, $completion, $server) = @_;
-                                                  my $server_cv = AE::cv {
-                                                      $completion->();
-                                                      if (my $result = $_[0]->recv) {
-                                                          # DEBUG "C: get - result %s", $result;
-                                                          for my $key (keys %{$result}) {
-                                                              next unless (defined $key and length $key);
-                                                              my $stripped = substr $key, length $self->{namespace};
-                                                              my $deserialized = $self->{serializer}->deserialize (@{$result->{$key}}{qw{data flags}});
-                                                              next unless defined $deserialized;
-                                                              $rv{$stripped} = $deserialized;
-                                                          }
-                                                      }
-                                                      $cmd_cv->end;
-                                                  };
-                                                  $self->{protocol}->__get ($handle, $server_cv, @{$requests{$server}});
-                                              }, sub {$cmd_cv->end});
-    }
-    $cmd_cv->end;
-}
 
 =head1 RATIONALE
 
@@ -995,6 +1096,16 @@ L<Cache::Memcached::AnyEvent> as the basis for this implementation,
 though the code has basically been rewritten from the groune
 up---which is to say, all bugs are mine.
 
+=head1 AUTHOR
+
+Michael Alan Dorman <mdorman@ironicdesign.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2010 by Michael Alan Dorman.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
 =cut
 
-1;

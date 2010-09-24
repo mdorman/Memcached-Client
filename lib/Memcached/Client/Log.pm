@@ -1,4 +1,7 @@
 package Memcached::Client::Log;
+BEGIN {
+  $Memcached::Client::Log::VERSION = '0.99';
+}
 # ABSTRACT: Logging support for Memcached::Client
 
 use strict;
@@ -9,26 +12,6 @@ use base qw{Exporter};
 
 our @EXPORT = qw{DEBUG INFO};
 
-=head1 SYNOPSIS
-
-  package Memcached::Client::Log;
-  DEBUG "This is a structure: %s", \%foo;
-
-=method DEBUG
-
-When the environment variable MCDEBUG is true, DEBUG() will warn the
-user with the specified message, formatted with sprintf and dumping
-the structure of any references that are made.
-
-If the variable MCDEBUG is false, the debugging code should be
-compiled out entirely.
-
-=method INFO
-
-INFO() will warn the user with the specified message, formatted with
-sprintf and dumping the structure of any references that are made.
-
-=cut
 
 # Hook into $SIG{__WARN__} if you want to route these debug messages
 # into your own logging system.
@@ -63,3 +46,49 @@ BEGIN {
 }
 
 1;
+
+__END__
+=pod
+
+=head1 NAME
+
+Memcached::Client::Log - Logging support for Memcached::Client
+
+=head1 VERSION
+
+version 0.99
+
+=head1 SYNOPSIS
+
+  package Memcached::Client::Log;
+  DEBUG "This is a structure: %s", \%foo;
+
+=head1 METHODS
+
+=head2 DEBUG
+
+When the environment variable MCDEBUG is true, DEBUG() will warn the
+user with the specified message, formatted with sprintf and dumping
+the structure of any references that are made.
+
+If the variable MCDEBUG is false, the debugging code should be
+compiled out entirely.
+
+=head2 INFO
+
+INFO() will warn the user with the specified message, formatted with
+sprintf and dumping the structure of any references that are made.
+
+=head1 AUTHOR
+
+Michael Alan Dorman <mdorman@ironicdesign.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2010 by Michael Alan Dorman.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
+

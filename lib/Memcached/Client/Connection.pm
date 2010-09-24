@@ -1,4 +1,7 @@
 package Memcached::Client::Connection;
+BEGIN {
+  $Memcached::Client::Connection::VERSION = '0.99';
+}
 # ABSTRACT: Class to manage Memcached::Client server connections
 
 use strict;
@@ -6,20 +9,6 @@ use warnings;
 use AnyEvent::Handle qw{};
 use Memcached::Client::Log qw{DEBUG INFO};
 
-=head1 SYNOPSIS
-
-  use Memcached::Client::Connection;
-  my $connection = Memcached::Client::Connection->new ("server:port");
-  $connection->enqueue ($request->($handle, $callback), $failback);
-
-=method new
-
-C<new()> builds a new connection object.
-
-Its only parameter is the server specification, in the form of
-"hostname:port".  The object is constructed and returns immediately.
-
-=cut
 
 sub new {
     my ($class, $server, $preparation) = @_;
@@ -27,17 +16,6 @@ sub new {
     return $self;
 }
 
-=method connect
-
-C<connect()> initiates a connection to the specified server.
-
-If it succeeds, it will start dequeuing requests for the server to
-satisfy.
-
-If it fails, it will respond to all outstanding requests by invoking
-their failback routine.
-
-=cut
 
 sub connect {
     my ($self) = @_;
@@ -70,12 +48,6 @@ sub connect {
                                              peername => $self->{server});
 }
 
-=method enqueue
-
-C<enqueue()> adds the request specified (request, failback) pair to
-the queue of requests to be processed.
-
-=cut
 
 sub enqueue {
     my ($self, $request, $failback) = @_;
@@ -86,17 +58,6 @@ sub enqueue {
     return 1;
 }
 
-=method dequeue
-
-C<dequeue()> manages the process of pulling requests off the queue and
-executing them as possible.  Each request is handed the handle for the
-server connection as well as a callback that will mark it as done and
-do the next request.
-
-If the request code fails to invoke this callback, processing will
-halt.
-
-=cut
 
 sub dequeue {
     my ($self) = @_;
@@ -113,12 +74,6 @@ sub dequeue {
                                     $self->{server});
 }
 
-=method fail
-
-C<fail()> is called when there is an error on the handle, and it
-invokes the failbacks of all queued requests.
-
-=cut
 
 sub fail {
     my ($self) = @_;
@@ -137,3 +92,73 @@ sub fail {
 }
 
 1;
+
+__END__
+=pod
+
+=head1 NAME
+
+Memcached::Client::Connection - Class to manage Memcached::Client server connections
+
+=head1 VERSION
+
+version 0.99
+
+=head1 SYNOPSIS
+
+  use Memcached::Client::Connection;
+  my $connection = Memcached::Client::Connection->new ("server:port");
+  $connection->enqueue ($request->($handle, $callback), $failback);
+
+=head1 METHODS
+
+=head2 new
+
+C<new()> builds a new connection object.
+
+Its only parameter is the server specification, in the form of
+"hostname:port".  The object is constructed and returns immediately.
+
+=head2 connect
+
+C<connect()> initiates a connection to the specified server.
+
+If it succeeds, it will start dequeuing requests for the server to
+satisfy.
+
+If it fails, it will respond to all outstanding requests by invoking
+their failback routine.
+
+=head2 enqueue
+
+C<enqueue()> adds the request specified (request, failback) pair to
+the queue of requests to be processed.
+
+=head2 dequeue
+
+C<dequeue()> manages the process of pulling requests off the queue and
+executing them as possible.  Each request is handed the handle for the
+server connection as well as a callback that will mark it as done and
+do the next request.
+
+If the request code fails to invoke this callback, processing will
+halt.
+
+=head2 fail
+
+C<fail()> is called when there is an error on the handle, and it
+invokes the failbacks of all queued requests.
+
+=head1 AUTHOR
+
+Michael Alan Dorman <mdorman@ironicdesign.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2010 by Michael Alan Dorman.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
+
