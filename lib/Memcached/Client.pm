@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use AnyEvent qw{};
 use AnyEvent::Handle qw{};
-use Carp qw{carp};
+use Carp qw{carp cluck};
 use Memcached::Client::Connection qw{};
 use Memcached::Client::Log qw{DEBUG INFO};
 use Module::Load;
@@ -158,7 +158,7 @@ sub new {
 
     # DEBUG "C: new - %s", \%args;
 
-    carp "You declared a callback but are also expecting a return value" if ($args{callback} and defined wantarray);
+    cluck "You declared a callback but are also expecting a return value" if ($args{callback} and defined wantarray);
 
     my $self = bless {}, $class;
 
@@ -344,14 +344,14 @@ sub DESTROY {
             if (ref $args[$#args] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
                 # DEBUG "C [%s]: Found condvar", $command;
-                carp "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+                cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
             } elsif (ref $args[$#args] eq 'CODE') {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
-                carp "You declared a callback but are also expecting a return value" if (defined wantarray);
+                cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } else {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                carp "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
             }
 
             $cmd_cv ||= AE::cv;
@@ -409,14 +409,14 @@ sub DESTROY {
             if (ref $args[$#args] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
                 # DEBUG "C [%s]: Found condvar", $command;
-                carp "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+                cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
             } elsif (ref $args[$#args] eq 'CODE') {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
-                carp "You declared a callback but are also expecting a return value" if (defined wantarray);
+                cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } else {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                carp "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
             }
 
             # Even if we're given a callback, we proxy it through a CV of our own creation
@@ -459,14 +459,14 @@ sub DESTROY {
             if (ref $args[$#args] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
                 # DEBUG "C [%s]: Found condvar", $command;
-                carp "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+                cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
             } elsif (ref $args[$#args] eq 'CODE') {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
-                carp "You declared a callback but are also expecting a return value" if (defined wantarray);
+                cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } else {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                carp "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
             }
 
             # Even if we're given a callback, we proxy it through a CV of our own creation

@@ -1,6 +1,7 @@
 v0.99
 
  * Don't wait on CVs that we were given, rather than generated.
+ * Give a stacktrace when we have a potential no-CV-waiting problem.
 
 v0.98
 
