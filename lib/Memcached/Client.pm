@@ -910,7 +910,7 @@ sub __hash {
         return sub {
             my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-            $delta //= 1;
+            $delta = 1 unless defined $delta;
             $connection->enqueue (sub {
                                       my ($handle, $completion, $server) = @_;
                                       my $server_cv = AE::cv {
@@ -942,7 +942,7 @@ sub __hash {
                 if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
                     # DEBUG "keys is %s, server is %s", $key, $server;
                     my ($delta, $initial) = @{$tuple};
-                    $delta //= 1;
+                    $delta = 1 unless defined $delta;
                     # DEBUG "C: $command %s", $server;
                     # DEBUG "Begin on command CV before enqueue";
                     $cmd_cv->begin;
