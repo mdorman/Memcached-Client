@@ -2,6 +2,7 @@ v1.0
 
  * Only warn about no route to return results for thing where the
    results are the point: get, incr/decr, stats, version.
+ * Remove //= use which was making us incompatible with perl < 5.10.
 
 v0.99
 
