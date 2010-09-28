@@ -173,6 +173,8 @@ sub new {
     $self->set_servers ($args{servers});
     $self->set_preprocessor ($args{preprocessor});
 
+    # DEBUG "C: Done creating object";
+
     $self;
 }
 
