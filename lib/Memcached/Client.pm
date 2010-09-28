@@ -753,7 +753,7 @@ returned.
 
 =cut
 
-    *replace = $keyed->("replace", 0, 0);
+    *replace = $keyed->("replace", 0, 1);
 
 =method replace_multi
 
@@ -783,7 +783,7 @@ returned.
 
 =cut
 
-    *set = $keyed->("set", 0, 0);
+    *set = $keyed->("set", 0, 1);
 
 =method set_multi
 
