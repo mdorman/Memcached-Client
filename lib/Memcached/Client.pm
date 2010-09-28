@@ -1,6 +1,6 @@
 package Memcached::Client;
 BEGIN {
-  $Memcached::Client::VERSION = '1.00';
+  $Memcached::Client::VERSION = '1.01';
 }
 # ABSTRACT: All-singing, all-dancing Perl client for Memcached
 
@@ -154,6 +154,7 @@ sub DESTROY {
         my ($command, $nowait) = @_;
         my $subname = "__$command";
         sub {
+            local *__ANON__ = "Memcached::Client::$command";
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
@@ -219,6 +220,7 @@ sub DESTROY {
         my ($command, $default, $nowait) = @_;
         my $subname = "__$command";
         sub {
+            local *__ANON__ = "Memcached::Client::$command";
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
@@ -269,6 +271,7 @@ sub DESTROY {
         my ($command, $nowait) = @_;
         my $subname = "__${command}_multi";
         sub {
+            local *__ANON__ = "Memcached::Client::$command";
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
@@ -346,13 +349,13 @@ sub DESTROY {
     *remove = $keyed->("delete", 0, 1);
 
 
-    *replace = $keyed->("replace", 0, 0);
+    *replace = $keyed->("replace", 0, 1);
 
 
     *replace_multi = $multi->("replace", 1);
 
 
-    *set = $keyed->("set", 0, 0);
+    *set = $keyed->("set", 0, 1);
 
 
     *set_multi = $multi->("set", 1);
@@ -380,6 +383,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $connection, $key, $value, $expiration) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $expiration = int ($expiration || 0);
@@ -408,6 +412,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $tuples) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
@@ -449,6 +454,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $delta = 1 unless defined $delta;
@@ -472,6 +478,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $tuples) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
@@ -619,7 +626,7 @@ Memcached::Client - All-singing, all-dancing Perl client for Memcached
 
 =head1 VERSION
 
-version 1.00
+version 1.01
 
 =head1 SYNOPSIS
 

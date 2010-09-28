@@ -1,3 +1,8 @@
+v1.1
+
+ * Fix nowait status on replace and set.
+ * Name some of our generated routines.
+
 v1.0
 
  * Only warn about no route to return results for thing where the
