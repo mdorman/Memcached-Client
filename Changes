@@ -5,6 +5,7 @@ v1.0
  * Remove //= use which was making us incompatible with perl < 5.10.
  * Always warn on socket errors.
  * Minor cleanups.
+ * Now in production at high-volume site.
 
 v0.99
 
