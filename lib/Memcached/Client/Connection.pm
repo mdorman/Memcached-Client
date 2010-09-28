@@ -56,7 +56,7 @@ sub connect {
                                              },
                                              on_error => sub {
                                                  my ($handle, $fatal, $message) = @_;
-                                                 # DEBUG "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                 INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
                                                  $self->fail;
                                                  $handle->destroy if ($handle);
                                                  undef $self->{handle};
