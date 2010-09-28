@@ -1,6 +1,7 @@
 v1.1
 
  * Fix nowait status on replace and set.
+ * Name some of our generated routines.
 
 v1.0
 
