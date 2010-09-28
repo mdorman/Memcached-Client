@@ -340,6 +340,7 @@ sub DESTROY {
         my ($command, $nowait) = @_;
         my $subname = "__$command";
         sub {
+            local *__ANON__ = "Memcached::Client::$command";
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
@@ -405,6 +406,7 @@ sub DESTROY {
         my ($command, $default, $nowait) = @_;
         my $subname = "__$command";
         sub {
+            local *__ANON__ = "Memcached::Client::$command";
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
@@ -455,6 +457,7 @@ sub DESTROY {
         my ($command, $nowait) = @_;
         my $subname = "__${command}_multi";
         sub {
+            local *__ANON__ = "Memcached::Client::$command";
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
@@ -841,6 +844,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $connection, $key, $value, $expiration) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $expiration = int ($expiration || 0);
@@ -869,6 +873,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $tuples) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
@@ -910,6 +915,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $delta = 1 unless defined $delta;
@@ -933,6 +939,7 @@ sub __hash {
         my ($command) = (@_);
         my $subname = "__$command";
         return sub {
+            local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $tuples) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
