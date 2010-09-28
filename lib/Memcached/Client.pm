@@ -1,6 +1,6 @@
 package Memcached::Client;
 BEGIN {
-  $Memcached::Client::VERSION = '0.99';
+  $Memcached::Client::VERSION = '1.00';
 }
 # ABSTRACT: All-singing, all-dancing Perl client for Memcached
 
@@ -34,6 +34,8 @@ sub new {
     $self->namespace ($args{namespace} || "");
     $self->set_servers ($args{servers});
     $self->set_preprocessor ($args{preprocessor});
+
+    # DEBUG "C: Done creating object";
 
     $self;
 }
@@ -149,7 +151,7 @@ sub DESTROY {
     # outstanding requests.
 
     my $broadcast = sub {
-        my ($command) = @_;
+        my ($command, $nowait) = @_;
         my $subname = "__$command";
         sub {
             my ($self, @args) = @_;
@@ -163,9 +165,9 @@ sub DESTROY {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
+            } elsif (!defined wantarray and !$nowait) {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value";
             }
 
             $cmd_cv ||= AE::cv;
@@ -214,7 +216,7 @@ sub DESTROY {
     # through the command CV.
 
     my $keyed = sub {
-        my ($command, $default) = @_;
+        my ($command, $default, $nowait) = @_;
         my $subname = "__$command";
         sub {
             my ($self, @args) = @_;
@@ -228,9 +230,9 @@ sub DESTROY {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
+            } elsif (!defined wantarray and !$nowait) {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value";
             }
 
             # Even if we're given a callback, we proxy it through a CV of our own creation
@@ -264,7 +266,7 @@ sub DESTROY {
     # command CV all additional arguments.
 
     my $multi = sub {
-        my ($command) = @_;
+        my ($command, $nowait) = @_;
         my $subname = "__${command}_multi";
         sub {
             my ($self, @args) = @_;
@@ -278,9 +280,9 @@ sub DESTROY {
                 $callback = pop @args;
                 # DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
-            } else {
+            } elsif (!defined wantarray and !$nowait) {
                 # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
-                cluck "You have no callback, but aren't waiting for a return value" unless (defined wantarray);
+                cluck "You have no callback, but aren't waiting for a return value" ;
             }
 
             # Even if we're given a callback, we proxy it through a CV of our own creation
@@ -296,70 +298,70 @@ sub DESTROY {
     };
 
 
-    *add = $keyed->("add", 0);
+    *add = $keyed->("add", 0, 1);
 
 
-    *add_multi = $multi->("add");
+    *add_multi = $multi->("add", 1);
 
 
-    *append = $keyed->("append", 0);
+    *append = $keyed->("append", 0, 1);
 
 
-    *append_multi = $multi->("append");
+    *append_multi = $multi->("append", 1);
 
 
-    *decr = $keyed->("decr", undef);
+    *decr = $keyed->("decr", undef, 0);
 
 
-    *decr_multi = $multi->("decr");
+    *decr_multi = $multi->("decr", 0);
 
 
-    *delete = $keyed->("delete", 0);
+    *delete = $keyed->("delete", 0, 1);
 
 
-    *delete_multi = $multi->("delete");
+    *delete_multi = $multi->("delete", 1);
 
 
-    *flush_all = $broadcast->("flush_all");
+    *flush_all = $broadcast->("flush_all", 1);
 
 
-    *get = $keyed->("get", undef);
+    *get = $keyed->("get", undef, 0);
 
 
-    *get_multi = $multi->("get");
+    *get_multi = $multi->("get", 0);
 
 
-    *incr = $keyed->("incr", undef);
+    *incr = $keyed->("incr", undef, 0);
 
 
-    *incr_multi = $multi->("incr");
+    *incr_multi = $multi->("incr", 0);
 
 
-    *prepend = $keyed->("prepend", 0);
+    *prepend = $keyed->("prepend", 0, 1);
 
 
-    *prepend_multi = $multi->("prepend");
+    *prepend_multi = $multi->("prepend", 1);
 
 
-    *remove = $keyed->("delete", 0);
+    *remove = $keyed->("delete", 0, 1);
 
 
-    *replace = $keyed->("replace", 0);
+    *replace = $keyed->("replace", 0, 0);
 
 
-    *replace_multi = $multi->("replace");
+    *replace_multi = $multi->("replace", 1);
 
 
-    *set = $keyed->("set", 0);
+    *set = $keyed->("set", 0, 0);
 
 
-    *set_multi = $multi->("set");
+    *set_multi = $multi->("set", 1);
 
 
-    *stats = $broadcast->("stats");
+    *stats = $broadcast->("stats", 0);
 
 
-    *version = $broadcast->("version");
+    *version = $broadcast->("version", 0);
 }
 
 # We use this routine to select our server---it uses the selector to
@@ -449,7 +451,7 @@ sub __hash {
         return sub {
             my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
             # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
-            $delta //= 1;
+            $delta = 1 unless defined $delta;
             $connection->enqueue (sub {
                                       my ($handle, $completion, $server) = @_;
                                       my $server_cv = AE::cv {
@@ -481,7 +483,7 @@ sub __hash {
                 if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
                     # DEBUG "keys is %s, server is %s", $key, $server;
                     my ($delta, $initial) = @{$tuple};
-                    $delta //= 1;
+                    $delta = 1 unless defined $delta;
                     # DEBUG "C: $command %s", $server;
                     # DEBUG "Begin on command CV before enqueue";
                     $cmd_cv->begin;
@@ -617,7 +619,7 @@ Memcached::Client - All-singing, all-dancing Perl client for Memcached
 
 =head1 VERSION
 
-version 0.99
+version 1.00
 
 =head1 SYNOPSIS
 

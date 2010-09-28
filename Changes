@@ -1,3 +1,12 @@
+v1.0
+
+ * Only warn about no route to return results for thing where the
+   results are the point: get, incr/decr, stats, version.
+ * Remove //= use which was making us incompatible with perl < 5.10.
+ * Always warn on socket errors.
+ * Minor cleanups.
+ * Now in production at high-volume site.
+
 v0.99
 
  * Don't wait on CVs that we were given, rather than generated.

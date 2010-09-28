@@ -1,6 +1,6 @@
 package Memcached::Client::Connection;
 BEGIN {
-  $Memcached::Client::Connection::VERSION = '0.99';
+  $Memcached::Client::Connection::VERSION = '1.00';
 }
 # ABSTRACT: Class to manage Memcached::Client server connections
 
@@ -34,7 +34,7 @@ sub connect {
                                              },
                                              on_error => sub {
                                                  my ($handle, $fatal, $message) = @_;
-                                                 # DEBUG "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                 INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
                                                  $self->fail;
                                                  $handle->destroy if ($handle);
                                                  undef $self->{handle};
@@ -102,7 +102,7 @@ Memcached::Client::Connection - Class to manage Memcached::Client server connect
 
 =head1 VERSION
 
-version 0.99
+version 1.00
 
 =head1 SYNOPSIS
 

@@ -76,7 +76,7 @@ sub append_multi {
 
 sub decr {
     my ($self, $key, $delta, $initial) = @_;
-    $delta //= 1;
+    $delta = 1 unless defined $delta;
     return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
@@ -163,7 +163,7 @@ sub get_multi {
 
 sub incr {
     my ($self, $key, $delta, $initial) = @_;
-    $delta //= 1;
+    $delta = 1 unless defined $delta;
     return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
