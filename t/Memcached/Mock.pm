@@ -74,6 +74,10 @@ sub append_multi {
     return \%rv;
 }
 
+sub connect {
+    return 1;
+}
+
 sub decr {
     my ($self, $key, $delta, $initial) = @_;
     $delta = 1 unless defined $delta;

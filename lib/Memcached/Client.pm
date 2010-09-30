@@ -287,6 +287,51 @@ sub set_servers {
     return 1;
 }
 
+=method connect()
+
+Immediately initate connections to all servers.
+
+While connections are implicitly made upon first need, and thus are
+invisible to the user, it is sometimes helpful to go ahead and start
+connections to all servers at once.  Calling C<connect()> will do
+this.
+
+=cut
+
+sub connect {
+    my ($self, @args) = @_;
+
+    DEBUG "C [connect]: Starting connection";
+
+    my ($callback, $cmd_cv);
+    if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+        $cmd_cv = pop @args;
+        DEBUG "C [connect]: Found condvar";
+        cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+    } elsif (ref $args[$#args] eq 'CODE') {
+        $callback = pop @args;
+        DEBUG "C [connect]: Found callback";
+        cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
+    }
+
+    $cmd_cv ||= AE::cv;
+    $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
+
+    $cmd_cv->begin (sub {$_[0]->send (1)});
+    for my $server (keys %{$self->{servers}}) {
+        DEBUG "C [connect]: Connecting %s", $server;
+        $cmd_cv->begin;
+        $self->{servers}->{$server}->connect (sub {
+                                                  DEBUG "C [connect]: Done connecting %s", $server;
+                                                  $cmd_cv->end
+                                              });
+    }
+    $cmd_cv->end;
+
+    DEBUG "C: %s", $callback ? "using callback" : "using condvar";
+    $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
+}
+
 =method disconnect()
 
 Immediately disconnect from all handles and shutdown everything.

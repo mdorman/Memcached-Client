@@ -40,23 +40,26 @@ their failback routine.
 =cut
 
 sub connect {
-    my ($self) = @_;
+    my ($self, $callback) = @_;
 
     my ($host, $port) = split (/:/, $self->{server});
     $port ||= 11211;
 
     # DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
 
+    $callback->() if $self->{handle};
     $self->{handle} ||= AnyEvent::Handle->new (connect => [$host, $port],
                                                keepalive => 1,
                                                on_connect => sub {
                                                    my ($handle, $host, $port) = @_;
                                                    # DEBUG "C [%s]: connected", $self->{server};
+                                                   $callback->() if ($callback);
                                                    $self->dequeue;
                                                },
                                                on_error => sub {
                                                    my ($handle, $fatal, $message) = @_;
                                                    INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                   $callback->() if ($callback);
                                                    $self->fail;
                                                    $handle->destroy if ($handle);
                                                    delete $self->{handle};

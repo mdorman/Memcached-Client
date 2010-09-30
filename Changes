@@ -1,6 +1,8 @@
 v1.03
 
  * Silence our perlcritic warning.
+ * Add ->connect to try and establish all possible connections at
+   once.
 
 v1.02
 
