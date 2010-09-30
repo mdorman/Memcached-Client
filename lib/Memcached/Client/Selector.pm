@@ -1,6 +1,6 @@
 package Memcached::Client::Selector;
 BEGIN {
-  $Memcached::Client::Selector::VERSION = '1.02';
+  $Memcached::Client::Selector::VERSION = '1.03';
 }
 # ABSTRACT: Abstract Base Class For Memcached::Client Selector
 
@@ -35,7 +35,7 @@ Memcached::Client::Selector - Abstract Base Class For Memcached::Client Selector
 
 =head1 VERSION
 
-version 1.02
+version 1.03
 
 =head1 SYNOPSIS
 

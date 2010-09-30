@@ -1,6 +1,6 @@
 package Memcached::Client::Connection;
 BEGIN {
-  $Memcached::Client::Connection::VERSION = '1.02';
+  $Memcached::Client::Connection::VERSION = '1.03';
 }
 # ABSTRACT: Class to manage Memcached::Client server connections
 
@@ -18,34 +18,37 @@ sub new {
 
 
 sub connect {
-    my ($self) = @_;
+    my ($self, $callback) = @_;
 
     my ($host, $port) = split (/:/, $self->{server});
     $port ||= 11211;
 
     # DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
 
-    $self->{handle} = AnyEvent::Handle->new (connect => [$host, $port],
-                                             keepalive => 1,
-                                             on_connect => sub {
-                                                 my ($handle, $host, $port) = @_;
-                                                 # DEBUG "C [%s]: connected", $self->{server};
-                                                 $self->dequeue;
-                                             },
-                                             on_error => sub {
-                                                 my ($handle, $fatal, $message) = @_;
-                                                 INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
-                                                 $self->fail;
-                                                 $handle->destroy if ($handle);
-                                                 undef $self->{handle};
-                                             },
-                                             on_prepare => sub {
-                                                 my ($handle) = @_;
-                                                 # DEBUG "C [%s]: preparing handle", $self->{server};
-                                                 $self->{prepare}->($handle);
-                                                 return $self->{connect_timeout} || 5;
-                                             },
-                                             peername => $self->{server});
+    $callback->() if $self->{handle};
+    $self->{handle} ||= AnyEvent::Handle->new (connect => [$host, $port],
+                                               keepalive => 1,
+                                               on_connect => sub {
+                                                   my ($handle, $host, $port) = @_;
+                                                   # DEBUG "C [%s]: connected", $self->{server};
+                                                   $callback->() if ($callback);
+                                                   $self->dequeue;
+                                               },
+                                               on_error => sub {
+                                                   my ($handle, $fatal, $message) = @_;
+                                                   INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                   $callback->() if ($callback);
+                                                   $self->fail;
+                                                   $handle->destroy if ($handle);
+                                                   delete $self->{handle};
+                                               },
+                                               on_prepare => sub {
+                                                   my ($handle) = @_;
+                                                   # DEBUG "C [%s]: preparing handle", $self->{server};
+                                                   $self->{prepare}->($handle);
+                                                   return $self->{connect_timeout} || 5;
+                                               },
+                                               peername => $self->{server});
 }
 
 
@@ -102,7 +105,7 @@ Memcached::Client::Connection - Class to manage Memcached::Client server connect
 
 =head1 VERSION
 
-version 1.02
+version 1.03
 
 =head1 SYNOPSIS
 
