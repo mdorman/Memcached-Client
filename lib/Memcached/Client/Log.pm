@@ -37,7 +37,7 @@ BEGIN {
 
     if (exists $ENV{MCTEST} and $ENV{MCTEST}) {
         $ENV{MCDEBUG} = 1;
-        open $log, "+>>,,debug.log" or die "Couldn't open ,,debug.log";
+        open $log, ">>", ",,debug.log" or die "Couldn't open ,,debug.log";
         $log->autoflush (1);
     }
 
