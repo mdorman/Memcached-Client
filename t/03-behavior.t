@@ -172,12 +172,11 @@ my @tests = (['version',
              ['get_multi', ['bar', 'foo'],
               '->get with all keys set so far']);
 
-my $memcached = $ENV{MEMCACHED} || qx{which memcached};
-
-chomp ($memcached);
+my $memcached = find_memcached ();
 
 if ($memcached) {
     plan tests => 2 + (4 * (scalar @tests + 2));
+    note "Using memcached $memcached";
 } else {
     plan skip_all => 'No memcached found';
 }
@@ -261,4 +260,28 @@ sub run {
     $cv->recv if $async;
 }
 
+sub find_memcached {
+    #diag "Looking for environment";
+
+    # If we're told where to look, use it if it looks executable
+    return $ENV{MEMCACHED} if ($ENV{MEMCACHED} and -x $ENV{MEMCACHED});
+
+    #diag "Looking using which";
+
+    # Try using which
+    chomp (my $memcached = qx{which memcached});
+
+    # If we got output, use it if it looks executable
+    return $memcached if ($memcached and -x $memcached);
+
+    #diag "Trying using path";
+
+    # If we're able to execute it without error
+    return "memcached" unless system qq{memcached -h 2>/dev/null};
+
+    #diag "Failing";
+
+    # We failed, we're going to skip
+    return;
+}
 1;
