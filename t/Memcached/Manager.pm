@@ -11,7 +11,7 @@ sub new {
     my ($class, @args) = @_;
     my %args = 1 == scalar @args ? %{$args[0]} : @args;
     my $self = bless {}, $class;
-    $self->{memcached} = $args{memcached} || $ENV{MEMCACHED} || qx{which memcached};
+    $self->{memcached} = $args{memcached};
     chomp $self->{memcached};
     note "Using memcached $self->{memcached}";
     map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
