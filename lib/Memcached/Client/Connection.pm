@@ -47,27 +47,27 @@ sub connect {
 
     # DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
 
-    $self->{handle} = AnyEvent::Handle->new (connect => [$host, $port],
-                                             keepalive => 1,
-                                             on_connect => sub {
-                                                 my ($handle, $host, $port) = @_;
-                                                 # DEBUG "C [%s]: connected", $self->{server};
-                                                 $self->dequeue;
-                                             },
-                                             on_error => sub {
-                                                 my ($handle, $fatal, $message) = @_;
-                                                 INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
-                                                 $self->fail;
-                                                 $handle->destroy if ($handle);
-                                                 undef $self->{handle};
-                                             },
-                                             on_prepare => sub {
-                                                 my ($handle) = @_;
-                                                 # DEBUG "C [%s]: preparing handle", $self->{server};
-                                                 $self->{prepare}->($handle);
-                                                 return $self->{connect_timeout} || 5;
-                                             },
-                                             peername => $self->{server});
+    $self->{handle} ||= AnyEvent::Handle->new (connect => [$host, $port],
+                                               keepalive => 1,
+                                               on_connect => sub {
+                                                   my ($handle, $host, $port) = @_;
+                                                   # DEBUG "C [%s]: connected", $self->{server};
+                                                   $self->dequeue;
+                                               },
+                                               on_error => sub {
+                                                   my ($handle, $fatal, $message) = @_;
+                                                   INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                   $self->fail;
+                                                   $handle->destroy if ($handle);
+                                                   delete $self->{handle};
+                                               },
+                                               on_prepare => sub {
+                                                   my ($handle) = @_;
+                                                   # DEBUG "C [%s]: preparing handle", $self->{server};
+                                                   $self->{prepare}->($handle);
+                                                   return $self->{connect_timeout} || 5;
+                                               },
+                                               peername => $self->{server});
 }
 
 =method enqueue
