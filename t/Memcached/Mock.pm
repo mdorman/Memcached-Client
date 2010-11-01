@@ -146,7 +146,11 @@ sub get {
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
     DEBUG "M: get: %s - %s", $server, $index;
-    return $self->{servers}->{$server}->{$index};
+    if (length $index > 250) {
+        return undef;
+    } else {
+        return $self->{servers}->{$server}->{$index};
+    }
 }
 
 sub get_multi {
@@ -160,7 +164,7 @@ sub get_multi {
         next unless (defined $self->{servers}->{$server});
         DEBUG "M: get: %s - %s", $server, $index;
         next unless (defined $self->{servers}->{$server}->{$index});
-        $rv{ref $key ? $key->[1] : $key} = $self->{servers}->{$server}->{$index};
+        $rv{ref $key ? $key->[1] : $key} = length $index > 250 ? undef : $self->{servers}->{$server}->{$index};
     }
     return \%rv;
 }
@@ -253,8 +257,12 @@ sub set {
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
     DEBUG "M: set: %s - %s - %s", $server, $index, $value;
-    $self->{servers}->{$server}->{$index} = $value;
-    return 1;
+    if (length $index > 250) {
+        return 0;
+    } else {
+        $self->{servers}->{$server}->{$index} = $value;
+        return 1;
+    }
 }
 
 sub set_multi {
