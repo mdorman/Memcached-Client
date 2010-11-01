@@ -290,7 +290,7 @@ sub __get {
         $handle->push_read (memcached_bin => sub {
                                 my ($msg) = @_;
                                 my ($flags, $exptime) = unpack('N2', $msg->{extra});
-                                if (exists $msg->{key} && exists $msg->{value}) {
+                                if (0 == $msg->{status} and exists $msg->{key} && exists $msg->{value}) {
                                     $rv{$key} = {cas => $msg->{cas}, data => $msg->{value}, flags => $flags};
                                 }
                                 $cv->end;
@@ -305,8 +305,12 @@ sub __version {
     $handle->push_write (memcached_bin => MEMD_VERSION);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;
-                            my $value = unpack ('a*', $msg->{value});
-                            $cv->send ($value);
+                            if (0 == $msg->{status}) {
+                                my $value = unpack ('a*', $msg->{value});
+                                $cv->send ($value);
+                            } else {
+                                $cv->send;
+                            }
                         });
 }
 
