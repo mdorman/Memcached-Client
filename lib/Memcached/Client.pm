@@ -880,7 +880,18 @@ Returns a hashref of server => version pairs.
 sub __hash {
     my ($self, $key) = @_;
     $key = $self->{preprocessor}->($key) if ($self->{preprocessor});
-    return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+    return unless (defined $key and # We must have some sort of key
+                   (ref $key and # Pre-hashed
+                    $key->[0] =~ m/^\d+$/ and # Hash is a decimal #
+                    length $key->[1] > 0 and # Real key has a length
+                    length $key->[1] <= 250 and # Real key is shorter than 250 chars
+                    -1 == index $key, " " # Key contains no spaces
+                   ) ||
+                   (length $key > 0 and # Real key has a length
+                    length $key <= 250 and # Real key is shorter than 250 chars
+                    -1 == index $key, " " # Key contains no spaces
+                   )
+                  );
     return ($key, $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : ""));
 }
 
