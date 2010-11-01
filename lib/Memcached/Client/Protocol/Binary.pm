@@ -213,6 +213,7 @@ sub _status_str {
         sub {
             my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
             # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
+            $flags ||= 0;
             my $extras = pack ('N2', $flags, $expiration);
             $handle->push_write (memcached_bin => $opcode, $key, $extras, $value);
             $handle->push_read (memcached_bin => sub {
