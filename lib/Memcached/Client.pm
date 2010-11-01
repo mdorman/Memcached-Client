@@ -835,7 +835,7 @@ returned.
 
 =method set_multi
 
-[$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+[$rc = ] set_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
 
 Given an arrayref of [key, value, $exptime] tuples, iterate over them
 and set the specified key to the specified value.  If an expiration is
