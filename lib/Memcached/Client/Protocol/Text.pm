@@ -122,7 +122,7 @@ sub __get {
                                        $handle->push_read (line => $code);
                                    });
         } else {
-            warn ("Unexpected line $line") unless ($bits[0] eq 'END');
+            warn ("Unexpected result $line from $command") unless ($bits[0] eq 'END');
             undef $code;
             $cv->send ($result);
         }
@@ -145,7 +145,7 @@ sub __stats {
             $result->{$bits[1]} = $bits[2];
             $handle->push_read (line => $code);
         } else {
-            warn ("Unexpected line $line") unless ($bits[0] eq 'END');
+            warn ("Unexpected result $line from $command") unless ($bits[0] eq 'END');
             undef $code;
             $cv->send ($result);
         }
@@ -166,7 +166,7 @@ sub __version {
                             if ($bits[0] eq 'VERSION') {
                                 $cv->send ($bits[1]);
                             } else {
-                                warn ("Unexpected line $line");
+                                warn ("Unexpected result $line from $command");
                                 $cv->send;
                             }
                         });
