@@ -197,17 +197,16 @@ for my $runner (qw{sync async}) {
     for my $protocol qw(Text Binary) {
         for my $selector qw(Traditional) {
             note sprintf "running %s/%s %s", $selector, $protocol, $runner;
-            DEBUG "running %s/%s %s", $selector, $protocol, $runner;
-            # my $namespace = join ('.', time, $$, '');
-            my $namespace = "llamas.";
+            # DEBUG "running %s/%s %s", $selector, $protocol, $runner;
+            my $namespace = join ('.', time, $$, '');
+            # my $namespace = "llamas.";
             isa_ok (my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers->servers), 'Memcached::Client', "Get memcached client");
             isa_ok (my $mock = t::Memcached::Mock->new (namespace => $namespace, selector => $selector, servers => $servers->servers, version => $manager->version), 't::Memcached::Mock', "Get mock memcached client");
             my $candidate = $servers->error;
             &$runner ($selector, $protocol, $candidate, $client, $mock, freeze \@tests);
-            if ($ENV{FAIL_TEST}) {
-                $manager->start ($candidate);
-                $mock->start ($candidate);
-            }
+            # DEBUG "Done with %s/%s %s", $selector, $protocol, $runner;
+            $manager->start ($candidate);
+            $mock->start ($candidate);
         }
     }
 }
@@ -216,25 +215,23 @@ sub async {
     my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
     # DEBUG "T: running %s/%s async", $selector, $protocol;
     my @tests = @{thaw $tests};
-    my $failed = 0;
+    my $failure = int rand (scalar @tests - 20) + 10;
+    note "Failing test $failure";
     my $cv = AE::cv;
     my $test; $test = sub {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
-        DEBUG "T: %s is %s (%s)", $msg, $method, \@args;
+        # DEBUG "T: %s is %s (%s)", $msg, $method, \@args;
                 $client->$method (@{dclone \@args}, sub {
                               my ($received) = @_;
                               my $expected = $mock->$method (@args);
-                              is_deeply ($received, $expected, $msg) or DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT;
+                              is_deeply ($received, $expected, $msg) or # DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT;
                               if (scalar @tests) {
-                                  if ($ENV{FAIL_TEST}) {
-                                      unless ($failed or (rand (1) < .95)) {
-                                          note "Failing $candidate";
-                                          DEBUG "Failing $candidate";
-                                          $manager->stop ($candidate);
-                                          $mock->stop ($candidate);
-                                          $failed = 1;
-                                      }
+                                  if (0 == --$failure) {
+                                      note "Failing $candidate";
+                                      # DEBUG "Failing $candidate";
+                                      $manager->stop ($candidate);
+                                      $mock->stop ($candidate);
                                   }
                                   goto &$test;
                               } else {
@@ -248,25 +245,23 @@ sub async {
 
 sub sync {
     my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
-    DEBUG "T: running %s/%s synchronous", $selector, $protocol;
+    # DEBUG "T: running %s/%s synchronous", $selector, $protocol;
     my @tests = @{thaw $tests};
-    my $failed = 0;
+    my $failure = int rand (scalar @tests - 20) + 10;
+    note "Failing test $failure";
     while (1) {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
-        DEBUG "T: %s is %s (%s)", $msg, $method, \@args;
+        # DEBUG "T: %s is %s (%s)", $msg, $method, \@args;
         my $expected = $mock->$method (@args);
         my $received = $client->$method (@args);
-        is_deeply ($received, $expected, $msg) or DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join (" - ", @{$tests[$n]}), $received, $expected, $mock), BAIL_OUT;
+        is_deeply ($received, $expected, $msg) or # DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join (" - ", @{$tests[$n]}), $received, $expected, $mock), BAIL_OUT;
         if (@tests) {
-            if ($ENV{FAIL_TEST}) {
-                unless ($failed or (rand (1) < .95)) {
-                    note "Failing $candidate";
-                    DEBUG "Failing $candidate";
-                    $mock->stop ($candidate);
-                    $manager->stop ($candidate);
-                    $failed = 1;
-                }
+            if (0 == --$failure) {
+                note "Failing $candidate";
+                # DEBUG "Failing $candidate";
+                $mock->stop ($candidate);
+                $manager->stop ($candidate);
             }
         } else {
             last;
