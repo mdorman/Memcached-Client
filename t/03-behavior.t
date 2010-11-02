@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use Memcached::Client qw{};
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG};
 use Storable qw{dclone freeze thaw};
 use t::Memcached::Manager qw{};
 use t::Memcached::Mock qw{};

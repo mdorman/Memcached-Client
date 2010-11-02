@@ -2,7 +2,7 @@ package t::Memcached::Servers;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG};
 
 # Minimum 2, up to 10
 use constant SERVERS => int (rand (9) + 2);

@@ -2,7 +2,7 @@ package t::Memcached::Mock;
 
 use strict;
 use warnings;
-use Memcached::Client::Log;
+use Memcached::Client::Log qw{DEBUG}};
 use Module::Load;
 
 sub new {

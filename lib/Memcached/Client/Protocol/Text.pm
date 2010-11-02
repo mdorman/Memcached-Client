@@ -3,7 +3,7 @@ package Memcached::Client::Protocol::Text;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Protocol};
 
 sub __cmd {

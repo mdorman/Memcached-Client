@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use AnyEvent::Handle qw{};
 use Config;
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG};
 use bytes;
 
 use base qw{Memcached::Client::Protocol};

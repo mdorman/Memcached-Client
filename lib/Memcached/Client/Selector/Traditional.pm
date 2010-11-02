@@ -3,7 +3,7 @@ package Memcached::Client::Selector::Traditional;
 
 use strict;
 use warnings;
-use Memcached::Client::Log;
+use Memcached::Client::Log qw{DEBUG}};
 use String::CRC32 qw{crc32};
 use base qw{Memcached::Client::Selector};
 
