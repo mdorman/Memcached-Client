@@ -84,7 +84,9 @@ sub stop {
     for my $sig (qw{TERM HUP QUIT INT KILL}) {
         DEBUG "Trying %s", $sig;
         kill ($sig, $pid);
-        if (waitpid ($pid, 0) == $pid) {
+        my $wp = waitpid ($pid, 0);
+        DEBUG "Waitpid returned %s", $wp;
+        if ($wp == $pid or $wp == -1) {
             $result = 1;
             last;
         }
