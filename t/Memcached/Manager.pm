@@ -26,6 +26,13 @@ sub start {
 
     my ($host, $port) = split /:/, $server;
 
+    # DEBUG "Checking port %s for existing process", $port;
+    if (my $remote = IO::Socket::INET->new (Proto => 'tcp', PeerAddr => $host, PeerPort => $port)) {
+        close $remote;
+        INFO "Already server on %s:%s", $host, $port;
+        exit;
+    }
+
     # DEBUG "Using port %s", $port;
 
     my $pid = fork;
