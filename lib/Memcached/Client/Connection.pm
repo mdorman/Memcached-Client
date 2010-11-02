@@ -59,10 +59,10 @@ sub connect {
                                                on_error => sub {
                                                    my ($handle, $fatal, $message) = @_;
                                                    INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                   # Need this here in case connection fails
                                                    $callback->() if ($callback);
-                                                   $self->fail;
-                                                   $handle->destroy if ($handle);
                                                    delete $self->{handle};
+                                                   $self->fail;
                                                },
                                                on_prepare => sub {
                                                    my ($handle) = @_;
@@ -126,17 +126,20 @@ invokes the failbacks of all queued requests.
 sub fail {
     my ($self) = @_;
     # DEBUG "C [%s]: failing requests", $self->{server};
-    if (my $current = delete $self->{executing}) {
-        # DEBUG "C [%s]: failing current", $self->{server};
-        $current->{failback}->();
+    my @requests;
+
+    if (my $request = delete $self->{executing}) {
+        push @requests, $request;
     }
-    if (my $current = delete $self->{queue}) {
-        for my $request (@{$current}) {
-            # DEBUG "C [%s]: invoking failback", $self->{server};
-            $request->{failback}->();
-        }
+    while (my $request = shift @{$self->{queue}}) {
+        push @requests, $request;
     }
-    $self->{queue} = [];
+
+    for my $request (@requests) {
+        # DEBUG "C [%s]: failing request %s", $self->{server}, $request;
+        $request->{failback}->();
+        undef $request;
+    }
 }
 
 1;
