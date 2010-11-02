@@ -4,7 +4,7 @@ package Memcached::Client::Serializer::Storable;
 use bytes;
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG}};
+use Memcached::Client::Log qw{DEBUG};
 use Storable qw{};
 use base qw{Memcached::Client::Serializer};
 
