@@ -47,7 +47,8 @@ sub add_multi {
     my (%rv);
     for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        $rv{$key} = $self->add (@{$tuple});
+        my $value = $self->add (@{$tuple});
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
@@ -69,7 +70,8 @@ sub append_multi {
     my (%rv);
     for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        $rv{$key} = $self->append (@{$tuple});
+        my $value = $self->append (@{$tuple});
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
@@ -104,7 +106,8 @@ sub decr_multi {
     my (%rv);
     for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        $rv{$key} = $self->decr (@{$tuple});
+        my $value = $self->decr (@{$tuple});
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
@@ -125,7 +128,8 @@ sub delete_multi {
     my ($self, @keys) = @_;
     my (%rv);
     for my $key (@keys) {
-        $rv{$key} = $self->delete ($key);
+        my $value = $self->delete ($key);
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
@@ -194,7 +198,8 @@ sub incr_multi {
     my (%rv);
     for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        $rv{$key} = $self->incr (@{$tuple});
+        my $value = $self->incr (@{$tuple});
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
@@ -223,7 +228,8 @@ sub prepend_multi {
     my (%rv);
     for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        $rv{$key} = $self->prepend (@{$tuple});
+        my $value = $self->prepend (@{$tuple});
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
@@ -245,7 +251,8 @@ sub replace_multi {
     my (%rv);
     for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        $rv{$key} = $self->replace (@{$tuple});
+        my $value = $self->replace (@{$tuple});
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
@@ -270,7 +277,8 @@ sub set_multi {
     my (%rv);
     for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        $rv{$key} = $self->set (@{$tuple});
+        my $value = $self->set (@{$tuple});
+        $rv{$key} = $value if defined $value;
     }
     return \%rv;
 }
