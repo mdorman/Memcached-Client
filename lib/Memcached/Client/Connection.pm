@@ -45,14 +45,14 @@ sub connect {
     my ($host, $port) = split (/:/, $self->{server});
     $port ||= 11211;
 
-    # DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
+    DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
 
     $callback->() if $self->{handle};
     $self->{handle} ||= AnyEvent::Handle->new (connect => [$host, $port],
                                                keepalive => 1,
                                                on_connect => sub {
                                                    my ($handle, $host, $port) = @_;
-                                                   # DEBUG "C [%s]: connected", $self->{server};
+                                                   DEBUG "C [%s]: connected", $self->{server};
                                                    $callback->() if ($callback);
                                                    $self->dequeue;
                                                },
@@ -66,7 +66,7 @@ sub connect {
                                                },
                                                on_prepare => sub {
                                                    my ($handle) = @_;
-                                                   # DEBUG "C [%s]: preparing handle", $self->{server};
+                                                   DEBUG "C [%s]: preparing handle", $self->{server};
                                                    $self->{prepare}->($handle);
                                                    return $self->{connect_timeout} || 5;
                                                },
@@ -83,7 +83,7 @@ the queue of requests to be processed.
 sub enqueue {
     my ($self, $request, $failback) = @_;
     $self->connect unless ($self->{handle});
-    # DEBUG "C [%s]: queuing request", $self->{server};
+    DEBUG "C [%s]: queuing request", $self->{server};
     push @{$self->{queue}}, {request => $request, failback => $failback};
     $self->dequeue;
     return 1;
@@ -104,12 +104,12 @@ halt.
 sub dequeue {
     my ($self) = @_;
     return if ($self->{executing});
-    # DEBUG "C [%s]: checking for job", $self->{server};
+    DEBUG "C [%s]: checking for job", $self->{server};
     return unless ($self->{executing} = shift @{$self->{queue}});
-    # DEBUG "C [%s]: executing", $self->{server};
+    DEBUG "C [%s]: executing", $self->{server};
     $self->{executing}->{request}->($self->{handle},
                                     sub {
-                                        # DEBUG "C [%s]: done with request", $self->{server};
+                                        DEBUG "C [%s]: done with request", $self->{server};
                                         delete $self->{executing};
                                         $self->dequeue;
                                     },
@@ -125,7 +125,7 @@ invokes the failbacks of all queued requests.
 
 sub fail {
     my ($self) = @_;
-    # DEBUG "C [%s]: failing requests", $self->{server};
+    DEBUG "C [%s]: failing requests", $self->{server};
     my @requests;
 
     if (my $request = delete $self->{executing}) {
@@ -136,7 +136,7 @@ sub fail {
     }
 
     for my $request (@requests) {
-        # DEBUG "C [%s]: failing request %s", $self->{server}, $request;
+        DEBUG "C [%s]: failing request %s", $self->{server}, $request;
         $request->{failback}->();
         undef $request;
     }

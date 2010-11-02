@@ -26,14 +26,14 @@ sub start {
 
     my ($host, $port) = split /:/, $server;
 
-    # DEBUG "Checking port %s for existing process", $port;
+    DEBUG "Checking port %s for existing process", $port;
     if (my $remote = IO::Socket::INET->new (Proto => 'tcp', PeerAddr => $host, PeerPort => $port)) {
         close $remote;
         INFO "Already server on %s:%s", $host, $port;
         exit;
     }
 
-    # DEBUG "Using port %s", $port;
+    DEBUG "Using port %s", $port;
 
     my $pid = fork;
 
@@ -62,10 +62,10 @@ sub wait {
     my $retry = 100;
 
     while ($retry--) {
-        # DEBUG "Checking %s:%s", $host, $port;
+        DEBUG "Checking %s:%s", $host, $port;
         if (my $remote = IO::Socket::INET->new (Proto => 'tcp', PeerAddr => $host, PeerPort => $port)) {
             close $remote;
-            # DEBUG "Connected to %s:%s", $host, $port;
+            DEBUG "Connected to %s:%s", $host, $port;
             return 1;
         }
         else {
@@ -117,7 +117,7 @@ sub version {
 sub DESTROY {
     my ($self) = @_;
     for my $server (keys %{$self->{servers}}) {
-        # DEBUG "Stopping $server\n";
+        DEBUG "Stopping $server\n";
         $self->stop ($server);
     };
 }

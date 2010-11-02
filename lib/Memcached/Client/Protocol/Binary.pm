@@ -212,7 +212,7 @@ sub _status_str {
         my ($name, $opcode) = @_;
         sub {
             my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
-            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
+            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
             $flags ||= 0;
             my $extras = pack ('N2', $flags, $expiration);
             $handle->push_write (memcached_bin => $opcode, $key, $extras, $value);
@@ -235,7 +235,7 @@ sub _status_str {
         my ($name, $opcode) = @_;
         return sub {
             my ($self, $handle, $cv, $key, $delta, $initial) = @_;
-            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
+            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
             my $expires = defined $initial ? 0 : 0xffffffff;
             $initial ||= 0;
             my $extras = HAS_64BIT ?
@@ -262,7 +262,7 @@ sub _status_str {
 
 sub __delete {
     my ($self, $handle, $cv, $key) = @_;
-    # DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
+    DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
     $handle->push_write (memcached_bin => MEMD_DELETE, $key);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;
@@ -284,7 +284,7 @@ sub __get {
     my (%rv);
     $cv->begin (sub {$_[0]->send (\%rv)});
     for my $key (@keys) {
-        # DEBUG "P: get: %s - %s", $handle->{peername}, $key;
+        DEBUG "P: get: %s - %s", $handle->{peername}, $key;
         $cv->begin;
         $handle->push_write (memcached_bin => MEMD_GETK, $key);
         $handle->push_read (memcached_bin => sub {
@@ -301,7 +301,7 @@ sub __get {
 
 sub __version {
     my ($self, $handle, $cv) = @_;
-    # DEBUG "P: version: %s", $handle->{peername};
+    DEBUG "P: version: %s", $handle->{peername};
     $handle->push_write (memcached_bin => MEMD_VERSION);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;
