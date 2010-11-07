@@ -1,6 +1,6 @@
 package Memcached::Client::Protocol::Binary;
 BEGIN {
-  $Memcached::Client::Protocol::Binary::VERSION = '1.03';
+  $Memcached::Client::Protocol::Binary::VERSION = '1.04';
 }
 # ABSTRACT: Implements new binary memcached protocol
 
@@ -8,7 +8,7 @@ use strict;
 use warnings;
 use AnyEvent::Handle qw{};
 use Config;
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG};
 use bytes;
 
 use base qw{Memcached::Client::Protocol};
@@ -215,7 +215,8 @@ sub _status_str {
         my ($name, $opcode) = @_;
         sub {
             my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
-            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
+            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
+            $flags ||= 0;
             my $extras = pack ('N2', $flags, $expiration);
             $handle->push_write (memcached_bin => $opcode, $key, $extras, $value);
             $handle->push_read (memcached_bin => sub {
@@ -237,7 +238,7 @@ sub _status_str {
         my ($name, $opcode) = @_;
         return sub {
             my ($self, $handle, $cv, $key, $delta, $initial) = @_;
-            # DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
+            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
             my $expires = defined $initial ? 0 : 0xffffffff;
             $initial ||= 0;
             my $extras = HAS_64BIT ?
@@ -264,7 +265,7 @@ sub _status_str {
 
 sub __delete {
     my ($self, $handle, $cv, $key) = @_;
-    # DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
+    DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
     $handle->push_write (memcached_bin => MEMD_DELETE, $key);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;
@@ -286,13 +287,13 @@ sub __get {
     my (%rv);
     $cv->begin (sub {$_[0]->send (\%rv)});
     for my $key (@keys) {
-        # DEBUG "P: get: %s - %s", $handle->{peername}, $key;
+        DEBUG "P: get: %s - %s", $handle->{peername}, $key;
         $cv->begin;
         $handle->push_write (memcached_bin => MEMD_GETK, $key);
         $handle->push_read (memcached_bin => sub {
                                 my ($msg) = @_;
                                 my ($flags, $exptime) = unpack('N2', $msg->{extra});
-                                if (exists $msg->{key} && exists $msg->{value}) {
+                                if (0 == $msg->{status} and exists $msg->{key} && exists $msg->{value}) {
                                     $rv{$key} = {cas => $msg->{cas}, data => $msg->{value}, flags => $flags};
                                 }
                                 $cv->end;
@@ -303,12 +304,16 @@ sub __get {
 
 sub __version {
     my ($self, $handle, $cv) = @_;
-    # DEBUG "P: version: %s", $handle->{peername};
+    DEBUG "P: version: %s", $handle->{peername};
     $handle->push_write (memcached_bin => MEMD_VERSION);
     $handle->push_read (memcached_bin => sub {
                             my ($msg) = @_;
-                            my $value = unpack ('a*', $msg->{value});
-                            $cv->send ($value);
+                            if (0 == $msg->{status}) {
+                                my $value = unpack ('a*', $msg->{value});
+                                $cv->send ($value);
+                            } else {
+                                $cv->send;
+                            }
                         });
 }
 
@@ -323,7 +328,7 @@ Memcached::Client::Protocol::Binary - Implements new binary memcached protocol
 
 =head1 VERSION
 
-version 1.03
+version 1.04
 
 =head1 AUTHOR
 

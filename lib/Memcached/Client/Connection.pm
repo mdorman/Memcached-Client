@@ -1,6 +1,6 @@
 package Memcached::Client::Connection;
 BEGIN {
-  $Memcached::Client::Connection::VERSION = '1.03';
+  $Memcached::Client::Connection::VERSION = '1.04';
 }
 # ABSTRACT: Class to manage Memcached::Client server connections
 
@@ -23,28 +23,28 @@ sub connect {
     my ($host, $port) = split (/:/, $self->{server});
     $port ||= 11211;
 
-    # DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
+    DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
 
     $callback->() if $self->{handle};
     $self->{handle} ||= AnyEvent::Handle->new (connect => [$host, $port],
                                                keepalive => 1,
                                                on_connect => sub {
                                                    my ($handle, $host, $port) = @_;
-                                                   # DEBUG "C [%s]: connected", $self->{server};
+                                                   DEBUG "C [%s]: connected", $self->{server};
                                                    $callback->() if ($callback);
                                                    $self->dequeue;
                                                },
                                                on_error => sub {
                                                    my ($handle, $fatal, $message) = @_;
                                                    INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                   # Need this here in case connection fails
                                                    $callback->() if ($callback);
-                                                   $self->fail;
-                                                   $handle->destroy if ($handle);
                                                    delete $self->{handle};
+                                                   $self->fail;
                                                },
                                                on_prepare => sub {
                                                    my ($handle) = @_;
-                                                   # DEBUG "C [%s]: preparing handle", $self->{server};
+                                                   DEBUG "C [%s]: preparing handle", $self->{server};
                                                    $self->{prepare}->($handle);
                                                    return $self->{connect_timeout} || 5;
                                                },
@@ -55,7 +55,7 @@ sub connect {
 sub enqueue {
     my ($self, $request, $failback) = @_;
     $self->connect unless ($self->{handle});
-    # DEBUG "C [%s]: queuing request", $self->{server};
+    DEBUG "C [%s]: queuing request", $self->{server};
     push @{$self->{queue}}, {request => $request, failback => $failback};
     $self->dequeue;
     return 1;
@@ -65,12 +65,12 @@ sub enqueue {
 sub dequeue {
     my ($self) = @_;
     return if ($self->{executing});
-    # DEBUG "C [%s]: checking for job", $self->{server};
+    DEBUG "C [%s]: checking for job", $self->{server};
     return unless ($self->{executing} = shift @{$self->{queue}});
-    # DEBUG "C [%s]: executing", $self->{server};
+    DEBUG "C [%s]: executing", $self->{server};
     $self->{executing}->{request}->($self->{handle},
                                     sub {
-                                        # DEBUG "C [%s]: done with request", $self->{server};
+                                        DEBUG "C [%s]: done with request", $self->{server};
                                         delete $self->{executing};
                                         $self->dequeue;
                                     },
@@ -80,18 +80,21 @@ sub dequeue {
 
 sub fail {
     my ($self) = @_;
-    # DEBUG "C [%s]: failing requests", $self->{server};
-    if (my $current = delete $self->{executing}) {
-        # DEBUG "C [%s]: failing current", $self->{server};
-        $current->{failback}->();
+    DEBUG "C [%s]: failing requests", $self->{server};
+    my @requests;
+
+    if (my $request = delete $self->{executing}) {
+        push @requests, $request;
     }
-    if (my $current = delete $self->{queue}) {
-        for my $request (@{$current}) {
-            # DEBUG "C [%s]: invoking failback", $self->{server};
-            $request->{failback}->();
-        }
+    while (my $request = shift @{$self->{queue}}) {
+        push @requests, $request;
     }
-    $self->{queue} = [];
+
+    for my $request (@requests) {
+        DEBUG "C [%s]: failing request %s", $self->{server}, $request;
+        $request->{failback}->();
+        undef $request;
+    }
 }
 
 1;
@@ -105,7 +108,7 @@ Memcached::Client::Connection - Class to manage Memcached::Client server connect
 
 =head1 VERSION
 
-version 1.03
+version 1.04
 
 =head1 SYNOPSIS
 

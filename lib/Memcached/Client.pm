@@ -1,6 +1,6 @@
 package Memcached::Client;
 BEGIN {
-  $Memcached::Client::VERSION = '1.03';
+  $Memcached::Client::VERSION = '1.04';
 }
 # ABSTRACT: All-singing, all-dancing Perl client for Memcached
 
@@ -10,7 +10,7 @@ use AnyEvent qw{};
 use AnyEvent::Handle qw{};
 use Carp qw{carp cluck};
 use Memcached::Client::Connection qw{};
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG};
 use Module::Load;
 
 
@@ -18,7 +18,7 @@ sub new {
     my ($class, @args) = @_;
     my %args = 1 == scalar @args ? %{$args[0]} : @args;
 
-    # DEBUG "C: new - %s", \%args;
+    DEBUG "C: new - %s", \%args;
 
     cluck "You declared a callback but are also expecting a return value" if ($args{callback} and defined wantarray);
 
@@ -35,7 +35,7 @@ sub new {
     $self->set_servers ($args{servers});
     $self->set_preprocessor ($args{preprocessor});
 
-    # DEBUG "C: Done creating object";
+    DEBUG "C: Done creating object";
 
     $self;
 }
@@ -103,7 +103,7 @@ sub set_servers {
 
     # Spawn connection handlers for all the others
     for my $server (keys %{$list}) {
-        # DEBUG "Creating connection for %s", $server;
+        DEBUG "Creating connection for %s", $server;
         $self->{servers}->{$server} ||= Memcached::Client::Connection->new ($server, $self->{protocol}->prepare_handle);
     }
 
@@ -195,14 +195,14 @@ sub DESTROY {
             my ($callback, $cmd_cv);
             if (ref $args[$#args] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
-                # DEBUG "C [%s]: Found condvar", $command;
+                DEBUG "C [%s]: Found condvar", $command;
                 cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
             } elsif (ref $args[$#args] eq 'CODE') {
                 $callback = pop @args;
-                # DEBUG "C [%s]: Found callback", $command;
+                DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } elsif (!defined wantarray and !$nowait) {
-                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
                 cluck "You have no callback, but aren't waiting for a return value";
             }
 
@@ -213,7 +213,7 @@ sub DESTROY {
 
             $cmd_cv->begin (sub {$_[0]->send (\%rv)});
             for my $connection (values %{$self->{servers}}) {
-                # DEBUG "C [%s]: enqueuing to %s", $command, $connection->{server};
+                DEBUG "C [%s]: enqueuing to %s", $command, $connection->{server};
                 $cmd_cv->begin;
                 $connection->enqueue (sub {
                                           my ($handle, $completion, $server) = @_;
@@ -226,7 +226,7 @@ sub DESTROY {
                                       }, sub {$cmd_cv->end});
             }
             $cmd_cv->end;
-            # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
+            DEBUG "C: %s", $callback ? "using callback" : "using condvar";
             $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
         }
     };
@@ -261,14 +261,14 @@ sub DESTROY {
             my ($callback, $cmd_cv);
             if (ref $args[$#args] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
-                # DEBUG "C [%s]: Found condvar", $command;
+                DEBUG "C [%s]: Found condvar", $command;
                 cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
             } elsif (ref $args[$#args] eq 'CODE') {
                 $callback = pop @args;
-                # DEBUG "C [%s]: Found callback", $command;
+                DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } elsif (!defined wantarray and !$nowait) {
-                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
                 cluck "You have no callback, but aren't waiting for a return value";
             }
 
@@ -277,13 +277,13 @@ sub DESTROY {
             $cmd_cv->cb (sub {$callback->($cmd_cv->recv || $default)}) if ($callback);
 
             if (my ($key, $server) = $self->__hash (shift @args)) {
-                # DEBUG "C [%s]: %s", $command, join " ", map {defined $_ ? "[$_]" : "[undef]"} $key, @args;
+                DEBUG "C [%s]: %s", $command, join " ", map {defined $_ ? "[$_]" : "[undef]"} $key, @args;
                 $self->$subname ($cmd_cv, wantarray, $self->{servers}->{$server}, $key, @args) or $cmd_cv->send ($default);
             } else {
                 $cmd_cv->send ($default);
             }
 
-            # DEBUG "C [%s]: %s", $command, $callback ? "using callback" : "using condvar";
+            DEBUG "C [%s]: %s", $command, $callback ? "using callback" : "using condvar";
             ($cmd_cv->recv || $default) unless ($callback or ($cmd_cv eq $_[$#_]));
         }
     };
@@ -312,14 +312,14 @@ sub DESTROY {
             my ($callback, $cmd_cv);
             if (ref $args[$#args] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
-                # DEBUG "C [%s]: Found condvar", $command;
+                DEBUG "C [%s]: Found condvar", $command;
                 cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
             } elsif (ref $args[$#args] eq 'CODE') {
                 $callback = pop @args;
-                # DEBUG "C [%s]: Found callback", $command;
+                DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } elsif (!defined wantarray and !$nowait) {
-                # DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
                 cluck "You have no callback, but aren't waiting for a return value" ;
             }
 
@@ -327,10 +327,10 @@ sub DESTROY {
             $cmd_cv ||= AE::cv;
             $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
 
-            # DEBUG "C: calling %s - %s", $subname, \@args;
+            DEBUG "C: calling %s - %s", $subname, \@args;
             $self->$subname ($cmd_cv, wantarray, @args);
 
-            # DEBUG "C: %s", $callback ? "using callback" : "using condvar";
+            DEBUG "C: %s", $callback ? "using callback" : "using condvar";
             $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
         }
     };
@@ -409,7 +409,18 @@ sub DESTROY {
 sub __hash {
     my ($self, $key) = @_;
     $key = $self->{preprocessor}->($key) if ($self->{preprocessor});
-    return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
+    return unless (defined $key and # We must have some sort of key
+                   (ref $key and # Pre-hashed
+                    $key->[0] =~ m/^\d+$/ and # Hash is a decimal #
+                    length $key->[1] > 0 and # Real key has a length
+                    length $key->[1] <= 250 and # Real key is shorter than 250 chars
+                    -1 == index $key, " " # Key contains no spaces
+                   ) ||
+                   (length $key > 0 and # Real key has a length
+                    length $key <= 250 and # Real key is shorter than 250 chars
+                    -1 == index $key, " " # Key contains no spaces
+                   )
+                  );
     return ($key, $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : ""));
 }
 
@@ -420,7 +431,7 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $connection, $key, $value, $expiration) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $expiration = int ($expiration || 0);
             return unless (defined $value);
             $connection->enqueue (sub {
@@ -449,17 +460,17 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $tuples) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
             $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-            # DEBUG "Tuples are %s", $tuples;
+            DEBUG "Tuples are %s", $tuples;
             for my $tuple (@{$tuples}) {
-                # DEBUG "Tuple is %s", $tuple;
+                DEBUG "Tuple is %s", $tuple;
                 if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
                     my ($value, $expiration) = @{$tuple};
                     $expiration = int ($expiration || 0);
                     $rv{$key} = 0;
-                    # DEBUG "C: $command %s", $server;
+                    DEBUG "C: $command %s", $server;
                     $cmd_cv->begin;
                     $self->{servers}->{$server}->enqueue (sub {
                                                               my ($handle, $completion, $server) = @_;
@@ -491,7 +502,7 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $delta = 1 unless defined $delta;
             $connection->enqueue (sub {
                                       my ($handle, $completion, $server) = @_;
@@ -515,37 +526,37 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $cmd_cv, $wantarray, $tuples) = @_;
-            # DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+            DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
-            # DEBUG "Begin on command CV to establish callback";
+            DEBUG "Begin on command CV to establish callback";
             $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-            # DEBUG "Tuples are %s", $tuples;
+            DEBUG "Tuples are %s", $tuples;
             for my $tuple (@{$tuples}) {
-                # DEBUG "Tuple is %s", $tuple;
+                DEBUG "Tuple is %s", $tuple;
                 if (my ($key, $server) = $self->__hash (shift @{$tuple})) {
-                    # DEBUG "keys is %s, server is %s", $key, $server;
+                    DEBUG "keys is %s, server is %s", $key, $server;
                     my ($delta, $initial) = @{$tuple};
                     $delta = 1 unless defined $delta;
-                    # DEBUG "C: $command %s", $server;
-                    # DEBUG "Begin on command CV before enqueue";
+                    DEBUG "C: $command %s", $server;
+                    DEBUG "Begin on command CV before enqueue";
                     $cmd_cv->begin;
                     $self->{servers}->{$server}->enqueue (sub {
                                                               my ($handle, $completion, $server) = @_;
                                                               my $server_cv = AE::cv {
                                                                   $completion->();
                                                                   $rv{$key} = $_[0]->recv;
-                                                                  # DEBUG "End on command CV from server CV";
+                                                                  DEBUG "End on command CV from server CV";
                                                                   $cmd_cv->end;
                                                               };
                                                               $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
                                                           }, sub {
-                                                              # DEBUG "End on command CV from error callback";
+                                                              DEBUG "End on command CV from error callback";
                                                               $cmd_cv->end
                                                           });
                 }
             }
 
-            # DEBUG "End on command CV ";
+            DEBUG "End on command CV ";
             $cmd_cv->end;
         }
     };
@@ -556,7 +567,7 @@ sub __hash {
 
 sub __delete {
     my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
-    # DEBUG "C [delete]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    DEBUG "C [delete]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
                               my $server_cv = AE::cv {
@@ -569,15 +580,15 @@ sub __delete {
 
 sub __delete_multi {
     my ($self, $cmd_cv, $wantarray, @keys) = @_;
-    # DEBUG "C [delete_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    DEBUG "C [delete_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%rv);
     $cmd_cv->begin (sub {$_[0]->send (\%rv)});
-    # DEBUG "Keys are %s", \@keys;
+    DEBUG "Keys are %s", \@keys;
     for my $key (@keys) {
         if (my ($key, $server) = $self->__hash ($key)) {
-            # DEBUG "key is %s", $key;
+            DEBUG "key is %s", $key;
             $rv{$key} = 0;
-            # DEBUG "C: delete_multi %s", $server;
+            DEBUG "C: delete_multi %s", $server;
             $cmd_cv->begin;
             $self->{servers}->{$server}->enqueue (sub {
                                                       my ($handle, $completion, $server) = @_;
@@ -595,13 +606,13 @@ sub __delete_multi {
 
 sub __get {
     my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
-    # DEBUG "C [get]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    DEBUG "C [get]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
                               my $server_cv = AE::cv {
                                   $completion->();
                                   if (my $result = $_[0]->recv) {
-                                      # DEBUG "C: get - result %s", $result;
+                                      DEBUG "C: get - result %s", $result;
                                       my $gotten = $result->{$self->{namespace} . (ref $key ? $key->[1] : $key)};
                                       $cmd_cv->send ($self->{serializer}->deserialize (@{$gotten}{qw{data flags}}));
                                   } else {
@@ -614,7 +625,7 @@ sub __get {
 
 sub __get_multi {
     my ($self, $cmd_cv, $wantarray, $keys) = @_;
-    # DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
+    DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%requests);
     for my $key (@{$keys}) {
         if (my ($key, $server) = $self->__hash ($key)) {
@@ -625,14 +636,14 @@ sub __get_multi {
     my (%rv);
     $cmd_cv->begin (sub {$_[0]->send (\%rv)});
     for my $server (keys %requests) {
-        # DEBUG "C: get %s", $server;
+        DEBUG "C: get %s", $server;
         $cmd_cv->begin;
         $self->{servers}->{$server}->enqueue (sub {
                                                   my ($handle, $completion, $server) = @_;
                                                   my $server_cv = AE::cv {
                                                       $completion->();
                                                       if (my $result = $_[0]->recv) {
-                                                          # DEBUG "C: get - result %s", $result;
+                                                          DEBUG "C: get - result %s", $result;
                                                           for my $key (keys %{$result}) {
                                                               next unless (defined $key and length $key);
                                                               my $stripped = substr $key, length $self->{namespace};
@@ -661,7 +672,7 @@ Memcached::Client - All-singing, all-dancing Perl client for Memcached
 
 =head1 VERSION
 
-version 1.03
+version 1.04
 
 =head1 SYNOPSIS
 
@@ -1058,7 +1069,7 @@ returned.
 
 =head2 set_multi
 
-[$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+[$rc = ] set_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
 
 Given an arrayref of [key, value, $exptime] tuples, iterate over them
 and set the specified key to the specified value.  If an expiration is

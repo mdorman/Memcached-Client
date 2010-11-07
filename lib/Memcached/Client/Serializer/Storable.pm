@@ -1,13 +1,13 @@
 package Memcached::Client::Serializer::Storable;
 BEGIN {
-  $Memcached::Client::Serializer::Storable::VERSION = '1.03';
+  $Memcached::Client::Serializer::Storable::VERSION = '1.04';
 }
 #ABSTRACT: Implements Traditional Memcached Serializing (Storable and Gzip)
 
 use bytes;
 use strict;
 use warnings;
-use Memcached::Client::Log;
+use Memcached::Client::Log qw{DEBUG};
 use Storable qw{};
 use base qw{Memcached::Client::Serializer};
 
@@ -34,11 +34,11 @@ sub deserialize {
     $flags ||= 0;
 
     if ($flags & F_COMPRESS && HAVE_ZLIB) {
-        # DEBUG "Uncompressing data";
+        DEBUG "Uncompressing data";
         $data = Compress::Zlib::memGunzip ($data);
     }
     if ($flags & F_STORABLE) {
-        # DEBUG "Thawing data";
+        DEBUG "Thawing data";
         $data = Storable::thaw ($data);
     }
 
@@ -55,7 +55,7 @@ sub serialize {
     my $flags = 0;
 
     if (ref $data) {
-        # DEBUG "Freezing data";
+        DEBUG "Freezing data";
         $data = Storable::nfreeze ($data);
         $flags |= F_STORABLE;
     }
@@ -66,12 +66,12 @@ sub serialize {
         my $compressable = ($command ne 'append' && $command ne 'prepend') && $self->{compress_threshold} && $len >= $self->{compress_threshold};
 
         if ($compressable) {
-            # DEBUG "Compressing data";
+            DEBUG "Compressing data";
             my $c_val = Compress::Zlib::memGzip ($data);
             my $c_len = bytes::length ($c_val);
 
             if ($c_len < $len * (1 - COMPRESS_SAVINGS)) {
-                # DEBUG "Compressing is a win";
+                DEBUG "Compressing is a win";
                 $data = $c_val;
                 $flags |= F_COMPRESS;
                 $len = $c_len;
@@ -93,7 +93,7 @@ Memcached::Client::Serializer::Storable - Implements Traditional Memcached Seria
 
 =head1 VERSION
 
-version 1.03
+version 1.04
 
 =head1 METHODS
 

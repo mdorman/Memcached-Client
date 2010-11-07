@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
 use Memcached::Client qw{};
-use Memcached::Client::Log qw{DEBUG INFO};
-use Storable qw{freeze thaw};
+use Memcached::Client::Log qw{DEBUG};
+use Storable qw{dclone freeze thaw};
 use t::Memcached::Manager qw{};
 use t::Memcached::Mock qw{};
 use t::Memcached::Servers qw{};
@@ -74,6 +74,12 @@ my @tests = (['connect', 1,
 
              ['get', 'bar',
               '->get to verify replacement'],
+
+             ['get', 'a' x 256,
+              '->get a key that is too large and does not exist'],
+
+             ['set', 'b' x 256, 'lurch',
+              '->set a key that is too large and does not exist'],
 
              ['replace', ['18', 'ding-dong'], 'bar',
               '->replace with a pre-hashed key and non-existent value'],
@@ -187,104 +193,95 @@ if ($memcached) {
 isa_ok (my $servers = t::Memcached::Servers->new, 't::Memcached::Servers', 'Get memcached server list manager');
 isa_ok (my $manager = t::Memcached::Manager->new (memcached => $memcached, servers => $servers->servers), 't::Memcached::Manager', 'Get memcached manager');
 
-for my $async (0..1) {
+for my $runner (qw{sync async}) {
     for my $protocol qw(Text Binary) {
         for my $selector qw(Traditional) {
-            note sprintf "running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
-            DEBUG "running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
+            note sprintf "running %s/%s %s", $selector, $protocol, $runner;
+            DEBUG "running %s/%s %s", $selector, $protocol, $runner;
             my $namespace = join ('.', time, $$, '');
+            # my $namespace = "llamas.";
             isa_ok (my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers->servers), 'Memcached::Client', "Get memcached client");
             isa_ok (my $mock = t::Memcached::Mock->new (namespace => $namespace, selector => $selector, servers => $servers->servers, version => $manager->version), 't::Memcached::Mock', "Get mock memcached client");
             my $candidate = $servers->error;
-            my $tests = freeze \@tests;
-            run ($async, $selector, $protocol, $candidate, $client, $mock, $tests);
-            if ($ENV{FAIL_TEST}) {
-                # Restart the failed server
-                $manager->start ($candidate);
-                $mock->start ($candidate);
-            }
+            &$runner ($selector, $protocol, $candidate, $client, $mock, freeze \@tests);
+            DEBUG "Done with %s/%s %s", $selector, $protocol, $runner;
+            $manager->start ($candidate);
+            $mock->start ($candidate);
         }
     }
 }
 
-sub run {
-    my ($async, $selector, $protocol, $candidate, $client, $mock, $tests) = @_;
-
+sub async {
+    my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
+    DEBUG "T: running %s/%s async", $selector, $protocol;
     my @tests = @{thaw $tests};
-
-    # DEBUG "T: running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
-
-    my $fail = int (rand ($#tests - 10));
-
-    my $cv = AE::cv if $async;
-
-    for my $n (0..$#tests) {
-        my @args = @{$tests[$n]};
-        my $method = shift @args;
+    my $failure = int rand (scalar @tests - 20) + 10;
+    note "Failing test $failure";
+    my $cv = AE::cv;
+    my $test; $test = sub {
+        my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
-
-        my $expected = $mock->$method (@args);
-        my $test = sub {
-            my ($received) = @_;
-            if (ref $expected) {
-                is_deeply ($_[0], $expected, $msg) or DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join (" - ", @{$tests[$n]}), $_[0], $expected, $mock), BAIL_OUT;
-            } else {
-                is ($_[0], $expected, $msg) or DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join (" - ", @{$tests[$n]}, $_[0]), $expected, $mock), BAIL_OUT;
-            }
-            $cv->send if ($async and $n == $#tests)};
-        if ($async) {
-            $client->$method (@args, $test);
-        } else {
-            $test->($client->$method (@args));
-        }
-
-        next unless $ENV{FAIL_TEST};
-
-        if ($n == $fail) {
-            # DEBUG "T: Failing %s", $candidate;
-            if ($async) {
-                # To be able to get consistent results with the mock
-                # object, we *must* sync on the cv here.
-                $client->version (sub {
+        DEBUG "T: %s is %s (%s)", $msg, $method, \@args;
+                $client->$method (@{dclone \@args}, sub {
+                              my ($received) = @_;
+                              my $expected = $mock->$method (@args);
+                              is_deeply ($received, $expected, $msg) or DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT;
+                              if (scalar @tests) {
+                                  if (0 == --$failure) {
                                       note "Failing $candidate";
+                                      DEBUG "Failing $candidate";
                                       $manager->stop ($candidate);
                                       $mock->stop ($candidate);
-                                      $cv->send;
-                                  });
-                $cv->recv;
-                $cv = AE::cv;
-            } else {
+                                  }
+                                  goto &$test;
+                              } else {
+                                  $cv->send;
+                              }
+                          });
+    };
+    $test->();
+    $cv->recv;
+}
+
+sub sync {
+    my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
+    DEBUG "T: running %s/%s synchronous", $selector, $protocol;
+    my @tests = @{thaw $tests};
+    my $failure = int rand (scalar @tests - 20) + 10;
+    note "Failing test $failure";
+    while (1) {
+        my ($method, @args) = @{shift @tests};
+        my $msg = pop @args;
+        DEBUG "T: %s is %s (%s)", $msg, $method, \@args;
+        my $expected = $mock->$method (@args);
+        my $received = $client->$method (@args);
+        is_deeply ($received, $expected, $msg) or DEBUG ("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT;
+        if (@tests) {
+            if (0 == --$failure) {
                 note "Failing $candidate";
+                DEBUG "Failing $candidate";
                 $mock->stop ($candidate);
                 $manager->stop ($candidate);
             }
+        } else {
+            last;
         }
     }
-
-    $cv->recv if $async;
 }
 
 sub find_memcached {
     #diag "Looking for environment";
-
     # If we're told where to look, use it if it looks executable
     return $ENV{MEMCACHED} if ($ENV{MEMCACHED} and -x $ENV{MEMCACHED});
-
     #diag "Looking using which";
-
     # Try using which
     chomp (my $memcached = qx{which memcached});
-
     # If we got output, use it if it looks executable
     return $memcached if ($memcached and -x $memcached);
-
     #diag "Trying using path";
-
     # If we're able to execute it without error
     return "memcached" unless system qq{memcached -h 2>/dev/null};
-
     #diag "Failing";
-
     # We failed, we're going to skip
     return;
 }
