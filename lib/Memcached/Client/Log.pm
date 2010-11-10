@@ -42,6 +42,7 @@ BEGIN {
     }
 
     *INFO = sub (@) {
+        local *__ANON__ = "Memcached::Client::Log";
         local $Data::Dumper::Indent = 1;
         local $Data::Dumper::Quotekeys = 0;
         local $Data::Dumper::Sortkeys = 1;
