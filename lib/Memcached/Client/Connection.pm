@@ -24,7 +24,7 @@ Its only parameter is the server specification, in the form of
 
 sub new {
     my ($class, $server, $preparation) = @_;
-    my $self = bless {last => 0, prepare => $preparation, requests => 0, queue => [], server => $server}, $class;
+    my $self = bless {attempts => 0, last => 0, prepare => $preparation, requests => 0, queue => [], server => $server}, $class;
     return $self;
 }
 
@@ -54,6 +54,7 @@ sub connect {
                                                on_connect => sub {
                                                    my ($handle, $host, $port) = @_;
                                                    DEBUG "C [%s]: connected", $self->{server};
+                                                   $self->{attempts} = 0;
                                                    $self->{last} = 0;
                                                    $self->{requests} = 0;
                                                    $callback->() if ($callback);
@@ -61,15 +62,19 @@ sub connect {
                                                },
                                                on_error => sub {
                                                    my ($handle, $fatal, $message) = @_;
-                                                   my $gap = $self->{last} ? AE::time - $self->{last} : 0;
-                                                   my $pending = scalar @{$self->{queue}} + (defined $self->{executing} ? 1 : 0);
+                                                   my $last = $self->{last} ? AE::time - $self->{last} : 0;
+                                                   my $pending = scalar @{$self->{queue}};
                                                    # Need this here in case connection fails
                                                    if ($message eq "Broken pipe") {
-                                                       INFO "Requeueing broken pipe";
+                                                       DEBUG "Requeueing broken pipe for %s", $self->{server};
                                                        delete $self->{handle};
                                                        $self->connect;
+                                                   } elsif ($message eq "Connection timed out" and ++$self->{attempts} < 5) {
+                                                       DEBUG "Requeueing connection timeout for %s", $self->{server};
+                                                       delete $self->{handle};
+                                                       $self->connect ();
                                                    } else {
-                                                       INFO "C [%s]: %s, %d completed, %d pending, %f since last request", $self->{server}, $message, $self->{requests}, $pending, $gap;
+                                                       INFO "C [%s]: %s, %d attempts, %d completed, %d pending, %f last", $self->{server}, $message, $self->{attempts}, $self->{requests}, $pending, $last;
                                                        $callback->() if ($callback);
                                                        delete $self->{handle};
                                                        $self->fail;
