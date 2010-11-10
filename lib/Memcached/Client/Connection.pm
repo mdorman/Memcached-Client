@@ -54,18 +54,26 @@ sub connect {
                                                on_connect => sub {
                                                    my ($handle, $host, $port) = @_;
                                                    DEBUG "C [%s]: connected", $self->{server};
+                                                   $self->{last} = 0;
+                                                   $self->{requests} = 0;
                                                    $callback->() if ($callback);
                                                    $self->dequeue;
                                                },
                                                on_error => sub {
                                                    my ($handle, $fatal, $message) = @_;
-                                                   my $gap = AE::time - $self->{last};
+                                                   my $gap = $self->{last} ? AE::time - $self->{last} : 0;
                                                    my $pending = scalar @{$self->{queue}} + (defined $self->{executing} ? 1 : 0);
-                                                   INFO "C [%s]: %s, %d completed, %d pending, %f since last request", $self->{server}, $message, $self->{requests}, $pending, $gap;
                                                    # Need this here in case connection fails
-                                                   $callback->() if ($callback);
-                                                   delete $self->{handle};
-                                                   $self->fail;
+                                                   if ($message eq "Broken pipe") {
+                                                       INFO "Requeueing broken pipe";
+                                                       delete $self->{handle};
+                                                       $self->connect;
+                                                   } else {
+                                                       INFO "C [%s]: %s, %d completed, %d pending, %f since last request", $self->{server}, $message, $self->{requests}, $pending, $gap;
+                                                       $callback->() if ($callback);
+                                                       delete $self->{handle};
+                                                       $self->fail;
+                                                   }
                                                },
                                                on_prepare => sub {
                                                    my ($handle) = @_;
