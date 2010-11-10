@@ -1,3 +1,8 @@
+v1.05
+
+ * Add non-destructive retries (that is, preserve the queue of
+   requests) in the face of certain sorts of errors.
+
 v1.04
 
  * Make some diagnostics more helpful

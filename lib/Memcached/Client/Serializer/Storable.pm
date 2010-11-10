@@ -1,6 +1,6 @@
 package Memcached::Client::Serializer::Storable;
 BEGIN {
-  $Memcached::Client::Serializer::Storable::VERSION = '1.04';
+  $Memcached::Client::Serializer::Storable::VERSION = '1.05';
 }
 #ABSTRACT: Implements Traditional Memcached Serializing (Storable and Gzip)
 
@@ -93,7 +93,7 @@ Memcached::Client::Serializer::Storable - Implements Traditional Memcached Seria
 
 =head1 VERSION
 
-version 1.04
+version 1.05
 
 =head1 METHODS
 
