@@ -3,6 +3,7 @@ package Memcached::Client::Connection;
 
 use strict;
 use warnings;
+use AnyEvent qw{};
 use AnyEvent::Handle qw{};
 use Memcached::Client::Log qw{DEBUG INFO};
 
@@ -23,7 +24,7 @@ Its only parameter is the server specification, in the form of
 
 sub new {
     my ($class, $server, $preparation) = @_;
-    my $self = bless {prepare => $preparation, queue => [], server => $server}, $class;
+    my $self = bless {last => 0, prepare => $preparation, requests => 0, queue => [], server => $server}, $class;
     return $self;
 }
 
@@ -58,7 +59,9 @@ sub connect {
                                                },
                                                on_error => sub {
                                                    my ($handle, $fatal, $message) = @_;
-                                                   INFO "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                   my $gap = AE::time - $self->{last};
+                                                   my $pending = scalar @{$self->{queue}} + (defined $self->{executing} ? 1 : 0);
+                                                   INFO "C [%s]: %s, %d completed, %d pending, %f since last request", $self->{server}, $message, $self->{requests}, $pending, $gap;
                                                    # Need this here in case connection fails
                                                    $callback->() if ($callback);
                                                    delete $self->{handle};
@@ -84,6 +87,7 @@ sub enqueue {
     my ($self, $request, $failback) = @_;
     $self->connect unless ($self->{handle});
     DEBUG "C [%s]: queuing request", $self->{server};
+    $self->{last} = AE::time;
     push @{$self->{queue}}, {request => $request, failback => $failback};
     $self->dequeue;
     return 1;
@@ -109,6 +113,7 @@ sub dequeue {
     DEBUG "C [%s]: executing", $self->{server};
     $self->{executing}->{request}->($self->{handle},
                                     sub {
+                                        $self->{requests}++;
                                         DEBUG "C [%s]: done with request", $self->{server};
                                         delete $self->{executing};
                                         $self->dequeue;
