@@ -8,3 +8,5 @@
 
  * Other hashing mechanisms. Consistent Hashing (patches welcome)
 
+ * Turn the requests into objects to we can carry around state and
+   other information more easily.
