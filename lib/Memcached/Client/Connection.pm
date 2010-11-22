@@ -72,7 +72,7 @@ sub connect {
                                                    } elsif ($message eq "Connection timed out" and ++$self->{attempts} < 5) {
                                                        DEBUG "Requeueing connection timeout for %s", $self->{server};
                                                        delete $self->{handle};
-                                                       $self->connect ();
+                                                       $self->connect ($callback);
                                                    } else {
                                                        INFO "C [%s]: %s, %d attempts, %d completed, %d pending, %f last", $self->{server}, $message, $self->{attempts}, $self->{requests}, $pending, $last;
                                                        $callback->() if ($callback);
@@ -84,7 +84,7 @@ sub connect {
                                                    my ($handle) = @_;
                                                    DEBUG "C [%s]: preparing handle", $self->{server};
                                                    $self->{prepare}->($handle);
-                                                   return $self->{connect_timeout} || 5;
+                                                   return $self->{connect_timeout} || 0.5;
                                                },
                                                peername => $self->{server});
 }
