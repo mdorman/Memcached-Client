@@ -250,18 +250,6 @@ sub set_preprocessor {
     return 1;
 }
 
-=method __preprocess
-
-Preprocess keys before they are transmitted.
-
-=cut
-
-sub __preprocess {
-    my ($self, $key) = @_;
-    return $key unless $self->{preprocessor};
-    return $self->{preprocessor}->($key);
-}
-
 =method set_servers()
 
 Change the list of servers to the listref handed to the function.
