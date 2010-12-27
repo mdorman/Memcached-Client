@@ -296,11 +296,11 @@ sub connect {
     DEBUG "C [connect]: Starting connection";
 
     my ($callback, $cmd_cv);
-    if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+    if (ref $args[-1] eq 'AnyEvent::CondVar') {
         $cmd_cv = pop @args;
         DEBUG "C [connect]: Found condvar";
         cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-    } elsif (ref $args[$#args] eq 'CODE') {
+    } elsif (ref $args[-1] eq 'CODE') {
         $callback = pop @args;
         DEBUG "C [connect]: Found callback";
         cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
@@ -321,7 +321,7 @@ sub connect {
     $cmd_cv->end;
 
     DEBUG "C: %s", $callback ? "using callback" : "using condvar";
-    $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
+    $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[-1]));
 }
 
 =method disconnect()
@@ -381,16 +381,16 @@ sub DESTROY {
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
-            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+            if (ref $args[-1] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
                 DEBUG "C [%s]: Found condvar", $command;
                 cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-            } elsif (ref $args[$#args] eq 'CODE') {
+            } elsif (ref $args[-1] eq 'CODE') {
                 $callback = pop @args;
                 DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } elsif (!defined wantarray and !$nowait) {
-                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[-1];
                 cluck "You have no callback, but aren't waiting for a return value";
             }
 
@@ -415,7 +415,7 @@ sub DESTROY {
             }
             $cmd_cv->end;
             DEBUG "C: %s", $callback ? "using callback" : "using condvar";
-            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
+            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[-1]));
         }
     };
 
@@ -447,16 +447,16 @@ sub DESTROY {
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
-            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+            if (ref $args[-1] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
                 DEBUG "C [%s]: Found condvar", $command;
                 cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-            } elsif (ref $args[$#args] eq 'CODE') {
+            } elsif (ref $args[-1] eq 'CODE') {
                 $callback = pop @args;
                 DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } elsif (!defined wantarray and !$nowait) {
-                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[-1];
                 cluck "You have no callback, but aren't waiting for a return value";
             }
 
@@ -472,7 +472,7 @@ sub DESTROY {
             }
 
             DEBUG "C [%s]: %s", $command, $callback ? "using callback" : "using condvar";
-            ($cmd_cv->recv || $default) unless ($callback or ($cmd_cv eq $_[$#_]));
+            ($cmd_cv->recv || $default) unless ($callback or ($cmd_cv eq $_[-1]));
         }
     };
 
@@ -498,16 +498,16 @@ sub DESTROY {
             my ($self, @args) = @_;
 
             my ($callback, $cmd_cv);
-            if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+            if (ref $args[-1] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
                 DEBUG "C [%s]: Found condvar", $command;
                 cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-            } elsif (ref $args[$#args] eq 'CODE') {
+            } elsif (ref $args[-1] eq 'CODE') {
                 $callback = pop @args;
                 DEBUG "C [%s]: Found callback", $command;
                 cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
             } elsif (!defined wantarray and !$nowait) {
-                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[$#args];
+                DEBUG "C [%s]: No callback or condvar: %s", $command, ref $args[-1];
                 cluck "You have no callback, but aren't waiting for a return value" ;
             }
 
@@ -519,7 +519,7 @@ sub DESTROY {
             $self->$subname ($cmd_cv, @args);
 
             DEBUG "C: %s", $callback ? "using callback" : "using condvar";
-            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
+            $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[-1]));
         }
     };
 
