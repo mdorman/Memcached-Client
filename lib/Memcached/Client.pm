@@ -163,8 +163,6 @@ sub new {
 
     DEBUG "C: new - %s", \%args;
 
-    cluck "You declared a callback but are also expecting a return value" if ($args{callback} and defined wantarray);
-
     my $self = bless {}, $class;
 
     # Get all of our objects instantiated
