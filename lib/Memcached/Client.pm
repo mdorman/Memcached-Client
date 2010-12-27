@@ -1058,7 +1058,7 @@ sub __delete_multi {
                                                       my $server_cv = AE::cv {
                                                           $completion->();
                                                           $rv{$key} = $_[0]->recv;
-                                                          $yield;
+                                                          $yield->end;
                                                       };
                                                       $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
                                                   }, sub {$yield->end});
