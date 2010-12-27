@@ -465,7 +465,7 @@ sub DESTROY {
 
             if (my ($key, $server) = $self->__hash (shift @args)) {
                 DEBUG "C [%s]: %s", $command, join " ", map {defined $_ ? "[$_]" : "[undef]"} $key, @args;
-                $self->$subname ($cmd_cv, wantarray, $self->{servers}->{$server}, $key, @args) or $cmd_cv->send ($default);
+                $self->$subname ($cmd_cv, $self->{servers}->{$server}, $key, @args) or $cmd_cv->send ($default);
             } else {
                 $cmd_cv->send ($default);
             }
@@ -515,7 +515,7 @@ sub DESTROY {
             $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
 
             DEBUG "C: calling %s - %s", $subname, \@args;
-            $self->$subname ($cmd_cv, wantarray, @args);
+            $self->$subname ($cmd_cv, @args);
 
             DEBUG "C: %s", $callback ? "using callback" : "using condvar";
             $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
@@ -892,7 +892,7 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $wantarray, $connection, $key, $value, $expiration) = @_;
+            my ($self, $cmd_cv, $connection, $key, $value, $expiration) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $expiration = int ($expiration || 0);
             return unless (defined $value);
@@ -921,7 +921,7 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $wantarray, $tuples) = @_;
+            my ($self, $cmd_cv, $tuples) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
             $cmd_cv->begin (sub {$_[0]->send (\%rv)});
@@ -963,7 +963,7 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $wantarray, $connection, $key, $delta, $initial) = @_;
+            my ($self, $cmd_cv, $connection, $key, $delta, $initial) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $delta = 1 unless defined $delta;
             $connection->enqueue (sub {
@@ -987,7 +987,7 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $wantarray, $tuples) = @_;
+            my ($self, $cmd_cv, $tuples) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
             DEBUG "Begin on command CV to establish callback";
@@ -1028,7 +1028,7 @@ sub __hash {
 }
 
 sub __delete {
-    my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
+    my ($self, $cmd_cv, $connection, $key) = @_;
     DEBUG "C [delete]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
@@ -1041,7 +1041,7 @@ sub __delete {
 }
 
 sub __delete_multi {
-    my ($self, $cmd_cv, $wantarray, @keys) = @_;
+    my ($self, $cmd_cv, @keys) = @_;
     DEBUG "C [delete_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%rv);
     $cmd_cv->begin (sub {$_[0]->send (\%rv)});
@@ -1067,7 +1067,7 @@ sub __delete_multi {
 }
 
 sub __get {
-    my ($self, $cmd_cv, $wantarray, $connection, $key) = @_;
+    my ($self, $cmd_cv, $connection, $key) = @_;
     DEBUG "C [get]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
@@ -1086,7 +1086,7 @@ sub __get {
 }
 
 sub __get_multi {
-    my ($self, $cmd_cv, $wantarray, $keys) = @_;
+    my ($self, $cmd_cv, $keys) = @_;
     DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%requests);
     for my $key (@{$keys}) {
