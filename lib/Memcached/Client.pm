@@ -259,6 +259,7 @@ Change the list of servers to the listref handed to the function.
 sub set_servers {
     my ($self, $servers) = @_;
 
+    # Give the selector the list of servers first
     $self->{selector}->set_servers ($servers);
 
     # Shut down the servers that are no longer part of the list
