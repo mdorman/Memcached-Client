@@ -72,6 +72,20 @@ client.
 Don't consider compressing items whose length is smaller than this
 number.
 
+=item C<compressor> => C<Gzip>
+
+You may provide the name of the class to be instantiated by
+L<Memcached::Client> to handle compressing data for the servers.
+
+If the C<$classname> is prefixed by a C<+>, it will be used verbatim.
+If it is not prefixed by a C<+>, we will look for the name under
+L<Memcached::Client::Compressor>.
+
+C<compressor> defaults to C<Gzip>, so a protocol object of the
+L<Memcached::Client::Compressor::Gzip> type will be created by
+default.  This is intended to be compatible with the behavior of
+C<Cache::Memcached>.
+
 =item C<namespace> => C<"">
 
 If namespace is set, it will be used to prefix all keys before
@@ -166,6 +180,7 @@ sub new {
     my $self = bless {}, $class;
 
     # Get all of our objects instantiated
+    $self->{compressor} = __class_loader (Compressor => $args{compressor} || 'Gzip')->new;
     $self->{serializer} = __class_loader (Serializer => $args{serializer} || 'Storable')->new;
     $self->{selector} = __class_loader (Selector => $args{selector} || 'Traditional')->new;
     $self->{protocol} = __class_loader (Protocol => $args{protocol} || 'Text')->new;
@@ -201,7 +216,7 @@ the new value if it's handed one.
 
 sub compress_threshold {
     my ($self, $new) = @_;
-    $self->{serializer}->compress_threshold ($new);
+    $self->{compressor}->compress_threshold ($new);
 }
 
 =method namespace
@@ -899,12 +914,13 @@ sub __hash {
             return unless (defined $value);
             $connection->enqueue (sub {
                                       my ($handle, $completion, $server) = @_;
-                                      my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
+                                      my $tuple = $self->{serializer}->serialize ($value);
+                                      $self->{compressor}->compress ($tuple, $command);
                                       my $server_cv = AE::cv {
                                           $completion->();
                                           $yield->send ($_[0]->recv);
                                       };
-                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
+                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), @{$tuple}{qw{data flags}}, $expiration);
                                   }, $yield);
         }
     };
@@ -937,13 +953,14 @@ sub __hash {
                     $yield->begin;
                     $self->{servers}->{$server}->enqueue (sub {
                                                               my ($handle, $completion, $server) = @_;
-                                                              my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
+                                                              my $tuple = $self->{serializer}->serialize ($value);
+                                                              $self->{compressor}->compress ($tuple, $command);
                                                               my $server_cv = AE::cv {
                                                                   $completion->();
                                                                   $rv{$key} = $_[0]->recv;
                                                                   $yield->end;
                                                               };
-                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
+                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), @{$tuple}{qw{data flags}}, $expiration);
                                                           }, sub {$yield->end});
                 }
             }
@@ -1077,7 +1094,9 @@ sub __get {
                                   if (my $result = $_[0]->recv) {
                                       DEBUG "C: get - result %s", $result;
                                       my $gotten = $result->{$self->{namespace} . (ref $key ? $key->[1] : $key)};
-                                      $yield->send ($self->{serializer}->deserialize (@{$gotten}{qw{data flags}}));
+                                      $self->{compressor}->decompress ($gotten);
+                                      $self->{serializer}->deserialize ($gotten);
+                                      $yield->send ($gotten->{data});
                                   } else {
                                       $yield->send;
                                   }
@@ -1110,9 +1129,10 @@ sub __get_multi {
                                                           for my $key (keys %{$result}) {
                                                               next unless (defined $key and length $key);
                                                               my $stripped = substr $key, length $self->{namespace};
-                                                              my $deserialized = $self->{serializer}->deserialize (@{$result->{$key}}{qw{data flags}});
-                                                              next unless defined $deserialized;
-                                                              $rv{$stripped} = $deserialized;
+                                                              $self->{compressor}->decompress ($result->{$key});
+                                                              $self->{serializer}->deserialize ($result->{$key});
+                                                              next unless defined $result->{$key}->{data};
+                                                              $rv{$stripped} = $result->{$key}->{data};
                                                           }
                                                       }
                                                       $yield->end;
