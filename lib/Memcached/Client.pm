@@ -893,7 +893,7 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $connection, $key, $value, $expiration) = @_;
+            my ($self, $yield, $connection, $key, $value, $expiration) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $expiration = int ($expiration || 0);
             return unless (defined $value);
@@ -902,10 +902,10 @@ sub __hash {
                                       my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
                                       my $server_cv = AE::cv {
                                           $completion->();
-                                          $cmd_cv->send ($_[0]->recv);
+                                          $yield->send ($_[0]->recv);
                                       };
                                       $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
-                                  }, $cmd_cv);
+                                  }, $yield);
         }
     };
 
@@ -922,10 +922,10 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $tuples) = @_;
+            my ($self, $yield, $tuples) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
-            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+            $yield->begin (sub {$_[0]->send (\%rv)});
             DEBUG "Tuples are %s", $tuples;
             for my $tuple (@{$tuples}) {
                 DEBUG "Tuple is %s", $tuple;
@@ -934,20 +934,20 @@ sub __hash {
                     $expiration = int ($expiration || 0);
                     $rv{$key} = 0;
                     DEBUG "C: $command %s", $server;
-                    $cmd_cv->begin;
+                    $yield->begin;
                     $self->{servers}->{$server}->enqueue (sub {
                                                               my ($handle, $completion, $server) = @_;
                                                               my ($data, $flags) = $self->{serializer}->serialize ($value, $command);
                                                               my $server_cv = AE::cv {
                                                                   $completion->();
                                                                   $rv{$key} = $_[0]->recv;
-                                                                  $cmd_cv->end;
+                                                                  $yield->end;
                                                               };
                                                               $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $data, $flags, $expiration);
-                                                          }, sub {$cmd_cv->end});
+                                                          }, sub {$yield->end});
                 }
             }
-            $cmd_cv->end;
+            $yield->end;
         }
     };
 
@@ -964,17 +964,17 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $connection, $key, $delta, $initial) = @_;
+            my ($self, $yield, $connection, $key, $delta, $initial) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $delta = 1 unless defined $delta;
             $connection->enqueue (sub {
                                       my ($handle, $completion, $server) = @_;
                                       my $server_cv = AE::cv {
                                           $completion->();
-                                          $cmd_cv->send ($_[0]->recv);
+                                          $yield->send ($_[0]->recv);
                                       };
                                       $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
-                                  }, $cmd_cv);
+                                  }, $yield);
         }
     };
 
@@ -988,11 +988,11 @@ sub __hash {
         my $subname = "__$command";
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
-            my ($self, $cmd_cv, $tuples) = @_;
+            my ($self, $yield, $tuples) = @_;
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
             DEBUG "Begin on command CV to establish callback";
-            $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+            $yield->begin (sub {$_[0]->send (\%rv)});
             DEBUG "Tuples are %s", $tuples;
             for my $tuple (@{$tuples}) {
                 DEBUG "Tuple is %s", $tuple;
@@ -1002,25 +1002,25 @@ sub __hash {
                     $delta = 1 unless defined $delta;
                     DEBUG "C: $command %s", $server;
                     DEBUG "Begin on command CV before enqueue";
-                    $cmd_cv->begin;
+                    $yield->begin;
                     $self->{servers}->{$server}->enqueue (sub {
                                                               my ($handle, $completion, $server) = @_;
                                                               my $server_cv = AE::cv {
                                                                   $completion->();
                                                                   $rv{$key} = $_[0]->recv;
                                                                   DEBUG "End on command CV from server CV";
-                                                                  $cmd_cv->end;
+                                                                  $yield->end;
                                                               };
                                                               $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
                                                           }, sub {
                                                               DEBUG "End on command CV from error callback";
-                                                              $cmd_cv->end
+                                                              $yield->end
                                                           });
                 }
             }
 
             DEBUG "End on command CV ";
-            $cmd_cv->end;
+            $yield->end;
         }
     };
 
@@ -1029,46 +1029,46 @@ sub __hash {
 }
 
 sub __delete {
-    my ($self, $cmd_cv, $connection, $key) = @_;
+    my ($self, $yield, $connection, $key) = @_;
     DEBUG "C [delete]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
                               my $server_cv = AE::cv {
                                   $completion->();
-                                  $cmd_cv->send ($_[0]->recv);
+                                  $yield->send ($_[0]->recv);
                               };
                               $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
-                          }, $cmd_cv);
+                          }, $yield);
 }
 
 sub __delete_multi {
-    my ($self, $cmd_cv, @keys) = @_;
+    my ($self, $yield, @keys) = @_;
     DEBUG "C [delete_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%rv);
-    $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+    $yield->begin (sub {$_[0]->send (\%rv)});
     DEBUG "Keys are %s", \@keys;
     for my $key (@keys) {
         if (my ($key, $server) = $self->__hash ($key)) {
             DEBUG "key is %s", $key;
             $rv{$key} = 0;
             DEBUG "C: delete_multi %s", $server;
-            $cmd_cv->begin;
+            $yield->begin;
             $self->{servers}->{$server}->enqueue (sub {
                                                       my ($handle, $completion, $server) = @_;
                                                       my $server_cv = AE::cv {
                                                           $completion->();
                                                           $rv{$key} = $_[0]->recv;
-                                                          $cmd_cv->end;
+                                                          $yield;
                                                       };
                                                       $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
-                                                  }, sub {$cmd_cv->end});
+                                                  }, sub {$yield->end});
         }
     }
-    $cmd_cv->end;
+    $yield->end;
 }
 
 sub __get {
-    my ($self, $cmd_cv, $connection, $key) = @_;
+    my ($self, $yield, $connection, $key) = @_;
     DEBUG "C [get]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
@@ -1077,17 +1077,17 @@ sub __get {
                                   if (my $result = $_[0]->recv) {
                                       DEBUG "C: get - result %s", $result;
                                       my $gotten = $result->{$self->{namespace} . (ref $key ? $key->[1] : $key)};
-                                      $cmd_cv->send ($self->{serializer}->deserialize (@{$gotten}{qw{data flags}}));
+                                      $yield->send ($self->{serializer}->deserialize (@{$gotten}{qw{data flags}}));
                                   } else {
-                                      $cmd_cv->send;
+                                      $yield->send;
                                   }
                               };
                               $self->{protocol}->__get ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
-                          }, $cmd_cv);
+                          }, $yield);
 }
 
 sub __get_multi {
-    my ($self, $cmd_cv, $keys) = @_;
+    my ($self, $yield, $keys) = @_;
     DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%requests);
     for my $key (@{$keys}) {
@@ -1097,10 +1097,10 @@ sub __get_multi {
     }
 
     my (%rv);
-    $cmd_cv->begin (sub {$_[0]->send (\%rv)});
+    $yield->begin (sub {$_[0]->send (\%rv)});
     for my $server (keys %requests) {
         DEBUG "C: get %s", $server;
-        $cmd_cv->begin;
+        $yield->begin;
         $self->{servers}->{$server}->enqueue (sub {
                                                   my ($handle, $completion, $server) = @_;
                                                   my $server_cv = AE::cv {
@@ -1115,12 +1115,12 @@ sub __get_multi {
                                                               $rv{$stripped} = $deserialized;
                                                           }
                                                       }
-                                                      $cmd_cv->end;
+                                                      $yield->end;
                                                   };
                                                   $self->{protocol}->__get ($handle, $server_cv, @{$requests{$server}});
-                                              }, sub {$cmd_cv->end});
+                                              }, sub {$yield->end});
     }
-    $cmd_cv->end;
+    $yield->end;
 }
 
 =head1 RATIONALE
