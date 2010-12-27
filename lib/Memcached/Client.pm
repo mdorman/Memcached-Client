@@ -18,7 +18,7 @@ use Module::Load;
   # Synchronous interface
   my $value = $client->get ($key);
 
-  # Asynchronous (AnyEvent) interface (using condvar)
+  # Asynchronous-ish interface (using your own condvar)
   use AnyEvent;
   my $cv = AnyEvent->cv;
   $client->get ($key, $cv);
@@ -31,6 +31,11 @@ use Module::Load;
     warn "got $value for $key";
   });
 
+  # You have to have an event loop running.
+  my $loop = AnyEvent->cv;
+  $loop->recv;
+
+  # Done
   $client->disconnect();
 
 =head1 DESCRIPTION
