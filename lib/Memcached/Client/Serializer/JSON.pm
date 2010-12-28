@@ -1,16 +1,16 @@
-package Memcached::Client::Serializer::Storable;
+package Memcached::Client::Serializer::JSON;
 BEGIN {
-  $Memcached::Client::Serializer::Storable::VERSION = '1.06';
+  $Memcached::Client::Serializer::JSON::VERSION = '1.06';
 }
-#ABSTRACT: Implements Memcached Serializing using Storable
+#ABSTRACT: Implements Memcached Serializing using JSON
 
 use strict;
 use warnings;
 use Memcached::Client::Log qw{DEBUG};
-use Storable qw{nfreeze thaw};
+use JSON qw{decode_json encode_json};
 use base qw{Memcached::Client::Serializer};
 
-use constant F_STORABLE => 1;
+use constant F_JSON => 4;
 
 sub deserialize {
     my ($self, $tuple) = @_;
@@ -19,12 +19,12 @@ sub deserialize {
 
     $tuple->{flags} ||= 0;
 
-    if ($tuple->{flags} & F_STORABLE) {
+    if ($tuple->{flags} & F_JSON) {
         DEBUG "Deserializing data";
-        $tuple->{data} = thaw $tuple->{data};
+        $tuple->{data} = decode_json $tuple->{data};
     }
 
-    return $tuple
+    return $tuple;
 }
 
 sub serialize {
@@ -36,8 +36,8 @@ sub serialize {
 
     if (ref $data) {
         DEBUG "Serializing data";
-        $tuple->{data} = nfreeze $data;
-        $tuple->{flags} |= F_STORABLE;
+        $tuple->{data} = encode_json $data;
+        $tuple->{flags} |= F_JSON;
     } else {
         $tuple->{data} = $data;
     }
@@ -52,7 +52,7 @@ __END__
 
 =head1 NAME
 
-Memcached::Client::Serializer::Storable - Implements Memcached Serializing using Storable
+Memcached::Client::Serializer::JSON - Implements Memcached Serializing using JSON
 
 =head1 VERSION
 

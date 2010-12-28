@@ -1,3 +1,11 @@
+v1.06
+
+ * Some general cleanups: documentation clarification, removing dead
+   or obsolete code, etc.
+ * Refactor compression to be separate from serialization
+ * Add JSON serialization (initial patch Kaare Rasmussen <kaare at
+   cpan dot com>)
+
 v1.05
 
  * Add non-destructive retries (that is, preserve the queue of

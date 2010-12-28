@@ -2,7 +2,7 @@ Source: memcached-client
 Section: perl
 Priority: optional
 Build-Depends: debhelper (>= 7)
-Build-Depends-Indep: libanyevent-perl, libstring-crc32-perl, perl (>= 5.10.0), memcached
+Build-Depends-Indep: libanyevent-perl, libstring-crc32-perl, perl (>= 5.10.0), memcached, libjson-perl, libjson-xs-perl
 Maintainer: Michael Alan Dorman <mdorman@ironicdesign.com>
 Standards-Version: 3.9.1
 Homepage: http://search.cpan.org/dist/Memcached-Client/
@@ -11,6 +11,7 @@ Package: libmemcached-client-perl
 Architecture: all
 Depends: ${misc:Depends}, ${perl:Depends}, libanyevent-perl,
  libstring-crc32-perl, perl (>= 5.10.0)
+Recommends: libjson-perl, libjson-xs-perl
 Description: All-singing, all-dancing Perl client for Memcached
  Memcached::Client attempts to be a versatile Perl client for the
  memcached protocol.

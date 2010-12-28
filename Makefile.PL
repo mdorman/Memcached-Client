@@ -13,6 +13,7 @@ my %WriteMakefileArgs = (
   'AUTHOR' => 'Michael Alan Dorman <mdorman@ironicdesign.com>',
   'BUILD_REQUIRES' => {
     'IO::Socket::INET' => '0',
+    'JSON::XS' => '0',
     'POSIX' => '0',
     'Test::More' => '0'
   },
@@ -32,13 +33,14 @@ my %WriteMakefileArgs = (
     'Data::Dumper' => '0',
     'Exporter' => '0',
     'IO::File' => '0',
+    'JSON' => '0',
     'Module::Load' => '0',
     'Storable' => '0',
     'String::CRC32' => '0',
     'bytes' => '0',
     'constant' => '0'
   },
-  'VERSION' => '1.05',
+  'VERSION' => '1.06',
   'test' => {
     'TESTS' => 't/*.t'
   }

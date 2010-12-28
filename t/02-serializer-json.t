@@ -1,14 +1,14 @@
 #!/usr/bin/perl
 
-use Memcached::Client::Serializer::Storable;
-use Storable qw{nfreeze};
+use Memcached::Client::Serializer::JSON;
+use JSON::XS qw{encode_json};
 use Test::More tests => 11;
 
 my $serializer;
 
-isa_ok ($serializer = Memcached::Client::Serializer::Storable->new,
-        'Memcached::Client::Serializer::Storable',
-        'Create a new instance of the ::Storable class');
+isa_ok ($serializer = Memcached::Client::Serializer::JSON->new,
+        'Memcached::Client::Serializer::JSON',
+        'Create a new instance of the ::JSON class');
 
 is ($serializer->serialize,
     undef,
@@ -46,12 +46,12 @@ is_deeply ($serializer->deserialize ({data => $longstring, flags => 0}),
 
 my $longref = {longstring => $longstring};
 
-my $longfreeze = nfreeze $longref;
+my $longjson = encode_json $longref;
 
 is_deeply ($serializer->serialize ($longref),
-           {data => $longfreeze, flags => 1},
+           {data => $longjson, flags => 4},
            '->serialize a very long repetitive string inside a ref');
 
-is_deeply ($serializer->deserialize ({data => $longfreeze, flags => 1}),
-           {data => $longref, flags => 1},
+is_deeply ($serializer->deserialize ({data => $longjson, flags => 4}),
+           {data => $longref, flags => 4},
            '->deserialize a very long repetitive string inside a ref, compare');
