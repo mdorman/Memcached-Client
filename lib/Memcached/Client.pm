@@ -9,6 +9,7 @@ use Carp qw{carp cluck};
 use Memcached::Client::Connection qw{};
 use Memcached::Client::Log qw{DEBUG};
 use Module::Load;
+use Scalar::Util qw{weaken};
 
 =head1 SYNOPSIS
 
@@ -395,6 +396,8 @@ sub DESTROY {
             local *__ANON__ = "Memcached::Client::$command";
             my ($self, @args) = @_;
 
+            my $weak = $self; weaken ($weak);
+
             my ($callback, $cmd_cv);
             if (ref $args[-1] eq 'AnyEvent::CondVar') {
                 $cmd_cv = pop @args;
@@ -425,7 +428,7 @@ sub DESTROY {
                                               $rv{$server} = $_[0]->recv;
                                               $cmd_cv->end;
                                           };
-                                          $self->{protocol}->$subname ($handle, $connection_cv, @args);
+                                          $weak->{protocol}->$subname ($handle, $connection_cv, @args);
                                       }, sub {$cmd_cv->end});
             }
             $cmd_cv->end;
@@ -909,18 +912,19 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $yield, $connection, $key, $value, $expiration) = @_;
+            my $weak = $self; weaken ($weak);
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $expiration = int ($expiration || 0);
             return unless (defined $value);
             $connection->enqueue (sub {
                                       my ($handle, $completion, $server) = @_;
-                                      my $tuple = $self->{serializer}->serialize ($value);
-                                      $self->{compressor}->compress ($tuple, $command);
+                                      my $tuple = $weak->{serializer}->serialize ($value);
+                                      $weak->{compressor}->compress ($tuple, $command);
                                       my $server_cv = AE::cv {
                                           $completion->();
                                           $yield->send ($_[0]->recv);
                                       };
-                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), @{$tuple}{qw{data flags}}, $expiration);
+                                      $weak->{protocol}->$subname ($handle, $server_cv, $weak->{namespace} . (ref $key ? $key->[1] : $key), @{$tuple}{qw{data flags}}, $expiration);
                                   }, $yield);
         }
     };
@@ -939,6 +943,7 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $yield, $tuples) = @_;
+            my $weak = $self; weaken ($weak);
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
             $yield->begin (sub {$_[0]->send (\%rv)});
@@ -953,14 +958,14 @@ sub __hash {
                     $yield->begin;
                     $self->{servers}->{$server}->enqueue (sub {
                                                               my ($handle, $completion, $server) = @_;
-                                                              my $tuple = $self->{serializer}->serialize ($value);
-                                                              $self->{compressor}->compress ($tuple, $command);
+                                                              my $tuple = $weak->{serializer}->serialize ($value);
+                                                              $weak->{compressor}->compress ($tuple, $command);
                                                               my $server_cv = AE::cv {
                                                                   $completion->();
                                                                   $rv{$key} = $_[0]->recv;
                                                                   $yield->end;
                                                               };
-                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), @{$tuple}{qw{data flags}}, $expiration);
+                                                              $weak->{protocol}->$subname ($handle, $server_cv, $weak->{namespace} . (ref $key ? $key->[1] : $key), @{$tuple}{qw{data flags}}, $expiration);
                                                           }, sub {$yield->end});
                 }
             }
@@ -982,6 +987,7 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $yield, $connection, $key, $delta, $initial) = @_;
+            my $weak = $self; weaken ($weak);
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             $delta = 1 unless defined $delta;
             $connection->enqueue (sub {
@@ -990,7 +996,7 @@ sub __hash {
                                           $completion->();
                                           $yield->send ($_[0]->recv);
                                       };
-                                      $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
+                                      $weak->{protocol}->$subname ($handle, $server_cv, $weak->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
                                   }, $yield);
         }
     };
@@ -1006,6 +1012,7 @@ sub __hash {
         return sub {
             local *__ANON__ = "Memcached::Client::$subname";
             my ($self, $yield, $tuples) = @_;
+            my $weak = $self; weaken ($weak);
             DEBUG "C [%s]: %s", $subname, join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
             my (%rv);
             DEBUG "Begin on command CV to establish callback";
@@ -1028,7 +1035,7 @@ sub __hash {
                                                                   DEBUG "End on command CV from server CV";
                                                                   $yield->end;
                                                               };
-                                                              $self->{protocol}->$subname ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
+                                                              $weak->{protocol}->$subname ($handle, $server_cv, $weak->{namespace} . (ref $key ? $key->[1] : $key), $delta, $initial);
                                                           }, sub {
                                                               DEBUG "End on command CV from error callback";
                                                               $yield->end
@@ -1047,6 +1054,7 @@ sub __hash {
 
 sub __delete {
     my ($self, $yield, $connection, $key) = @_;
+    my $weak = $self; weaken ($weak);
     DEBUG "C [delete]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
@@ -1054,12 +1062,13 @@ sub __delete {
                                   $completion->();
                                   $yield->send ($_[0]->recv);
                               };
-                              $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
+                              $weak->{protocol}->__delete ($handle, $server_cv, $weak->{namespace} . (ref $key ? $key->[1] : $key));
                           }, $yield);
 }
 
 sub __delete_multi {
     my ($self, $yield, @keys) = @_;
+    my $weak = $self; weaken ($weak);
     DEBUG "C [delete_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%rv);
     $yield->begin (sub {$_[0]->send (\%rv)});
@@ -1077,7 +1086,7 @@ sub __delete_multi {
                                                           $rv{$key} = $_[0]->recv;
                                                           $yield->end;
                                                       };
-                                                      $self->{protocol}->__delete ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
+                                                      $weak->{protocol}->__delete ($handle, $server_cv, $weak->{namespace} . (ref $key ? $key->[1] : $key));
                                                   }, sub {$yield->end});
         }
     }
@@ -1086,6 +1095,7 @@ sub __delete_multi {
 
 sub __get {
     my ($self, $yield, $connection, $key) = @_;
+    my $weak = $self; weaken ($weak);
     DEBUG "C [get]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     $connection->enqueue (sub {
                               my ($handle, $completion, $server) = @_;
@@ -1093,20 +1103,21 @@ sub __get {
                                   $completion->();
                                   if (my $result = $_[0]->recv) {
                                       DEBUG "C: get - result %s", $result;
-                                      my $gotten = $result->{$self->{namespace} . (ref $key ? $key->[1] : $key)};
-                                      $self->{compressor}->decompress ($gotten);
-                                      $self->{serializer}->deserialize ($gotten);
+                                      my $gotten = $result->{$weak->{namespace} . (ref $key ? $key->[1] : $key)};
+                                      $weak->{compressor}->decompress ($gotten);
+                                      $weak->{serializer}->deserialize ($gotten);
                                       $yield->send ($gotten->{data});
                                   } else {
                                       $yield->send;
                                   }
                               };
-                              $self->{protocol}->__get ($handle, $server_cv, $self->{namespace} . (ref $key ? $key->[1] : $key));
+                              $weak->{protocol}->__get ($handle, $server_cv, $weak->{namespace} . (ref $key ? $key->[1] : $key));
                           }, $yield);
 }
 
 sub __get_multi {
     my ($self, $yield, $keys) = @_;
+    my $weak = $self; weaken ($weak);
     DEBUG "C [get_multi]: %s", join " ", map {defined $_ ? "[$_]" : "[undef]"} @_;
     my (%requests);
     for my $key (@{$keys}) {
@@ -1128,16 +1139,16 @@ sub __get_multi {
                                                           DEBUG "C: get - result %s", $result;
                                                           for my $key (keys %{$result}) {
                                                               next unless (defined $key and length $key);
-                                                              my $stripped = substr $key, length $self->{namespace};
-                                                              $self->{compressor}->decompress ($result->{$key});
-                                                              $self->{serializer}->deserialize ($result->{$key});
+                                                              my $stripped = substr $key, length $weak->{namespace};
+                                                              $weak->{compressor}->decompress ($result->{$key});
+                                                              $weak->{serializer}->deserialize ($result->{$key});
                                                               next unless defined $result->{$key}->{data};
                                                               $rv{$stripped} = $result->{$key}->{data};
                                                           }
                                                       }
                                                       $yield->end;
                                                   };
-                                                  $self->{protocol}->__get ($handle, $server_cv, @{$requests{$server}});
+                                                  $weak->{protocol}->__get ($handle, $server_cv, @{$requests{$server}});
                                               }, sub {$yield->end});
     }
     $yield->end;
