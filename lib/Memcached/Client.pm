@@ -353,13 +353,10 @@ important to call C<disconnect()> explicitly.
 sub disconnect {
     my ($self) = @_;
 
-    for my $handle (map {delete $self->{servers}->{$_}->{handle}} keys %{$self->{servers}}) {
-        next unless defined $handle;
-        eval {
-            $handle->stop_read;
-            $handle->push_shutdown();
-            $handle->destroy();
-        };
+    DEBUG "C [disconnect]: Disconnecting all servers";
+    for my $server (keys %{$self->{servers}}) {
+        DEBUG "C [disconnect]: Disconnecting %s", $server;
+        $self->{servers}->{$server}->disconnect;
     }
 }
 

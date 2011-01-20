@@ -91,6 +91,27 @@ sub connect {
                                                peername => $self->{server});
 }
 
+=method disconnect
+
+=cut
+
+sub disconnect {
+    my ($self) = @_;
+
+    DEBUG "C [%s]: disconnecting", $self->{server};
+    if (my $handle = $self->{handle}) {
+        DEBUG "C [%s]: got handle", $self->{server};
+        eval {
+            $handle->stop_read;
+            $handle->push_shutdown();
+            $handle->destroy();
+        };
+    }
+
+    DEBUG "C [%s]: failing all requests", $self->{server};
+    $self->fail;
+}
+
 =method enqueue
 
 C<enqueue()> adds the request specified (request, failback) pair to
