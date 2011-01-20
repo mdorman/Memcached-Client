@@ -287,7 +287,8 @@ sub set_servers {
     # Shut down the servers that are no longer part of the list
     my $list = {map {(ref $_ ? $_->[0] : $_), {}} @{$servers}};
     for my $server (keys %{$self->{servers} || {}}) {
-        next if $list->{$server};
+        next if (delete $list->{$server});
+        DEBUG "Disconnecting %s", $server;
         my $connection = delete $self->{servers}->{$server};
         $connection->disconnect;
     }
