@@ -283,7 +283,7 @@ sub set_servers {
     for my $server (keys %{$self->{servers} || {}}) {
         next if $list->{$server};
         my $connection = delete $self->{servers}->{$server};
-        $connection->fail;
+        $connection->disconnect;
     }
 
     # Spawn connection handlers for all the others
