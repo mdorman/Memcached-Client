@@ -85,7 +85,7 @@ sub connect {
                                                on_prepare => sub {
                                                    my ($handle) = @_;
                                                    DEBUG "C [%s]: preparing handle", $weak->{server};
-                                                   $weak->{prepare}->($handle);
+                                                   $weak->{prepare}->($handle) if ($weak->{prepare});
                                                    return $weak->{connect_timeout} || 0.5;
                                                },
                                                peername => $self->{server});
