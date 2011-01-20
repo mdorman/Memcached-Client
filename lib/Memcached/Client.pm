@@ -56,7 +56,7 @@ and EV back-ends.
 It allows for pluggable implementations of hashing, protcol,
 serialization and compression---it currently implements the
 traditional Cache::Memcached hashing, both text and binary protocols,
-and serialization using Storable, and compression using gzip.
+serialization using Storable or JSON, and compression using gzip.
 
 =method new
 
