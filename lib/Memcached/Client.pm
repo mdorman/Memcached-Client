@@ -355,6 +355,7 @@ sub disconnect {
 
     DEBUG "C [disconnect]: Disconnecting all servers";
     for my $server (keys %{$self->{servers}}) {
+        next unless defined $self->{servers}->{$server};
         DEBUG "C [disconnect]: Disconnecting %s", $server;
         $self->{servers}->{$server}->disconnect;
     }
