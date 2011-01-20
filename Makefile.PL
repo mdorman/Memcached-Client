@@ -35,12 +35,13 @@ my %WriteMakefileArgs = (
     'IO::File' => '0',
     'JSON' => '0',
     'Module::Load' => '0',
+    'Scalar::Util' => '0',
     'Storable' => '0',
     'String::CRC32' => '0',
     'bytes' => '0',
     'constant' => '0'
   },
-  'VERSION' => '1.06',
+  'VERSION' => '1.07',
   'test' => {
     'TESTS' => 't/*.t'
   }

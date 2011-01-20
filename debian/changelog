@@ -1,3 +1,9 @@
+memcached-client (1.07-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- Michael Alan Dorman <mdorman@ironicdesign.com>  Thu, 20 Jan 2011 11:35:44 -0500
+
 memcached-client (1.06-1) unstable; urgency=low
 
   * New upstream release
