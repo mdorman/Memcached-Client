@@ -8,7 +8,7 @@ use AnyEvent::Handle qw{};
 use Carp qw{carp cluck};
 use Memcached::Client::Connection qw{};
 use Memcached::Client::Log qw{DEBUG};
-use Module::Load;
+use Module::Load qw{load};
 use Scalar::Util qw{weaken};
 
 =head1 SYNOPSIS
