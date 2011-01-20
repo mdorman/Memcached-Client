@@ -89,8 +89,14 @@ C<Cache::Memcached>.
 
 =item C<namespace> => C<"">
 
-If namespace is set, it will be used to prefix all keys before
-hashing.  This is not defined by default.
+This string will be used to prefix all keys stored or retrieved by
+this client.
+
+=item C<hash_namespace> => C<1>
+
+If hash_namespace is true, any namespace prefix will be added to the
+key B<before> hashing.  If it is false, any namespace prefix will be
+added to the key B<after> hashing.
 
 =item C<no_rehash> => C<1>
 
