@@ -14,28 +14,28 @@ use constant +{
 };
 
 sub decompress {
-    my ($self, $tuple) = @_;
+    my ($self, $data, $flags) = @_;
 
-    return unless defined $tuple->{data};
+    return unless defined $data;
 
-    $tuple->{flags} ||= 0;
+    $flags ||= 0;
 
-    if ($tuple->{flags} & F_COMPRESS && HAVE_ZLIB) {
+    if ($flags & F_COMPRESS && HAVE_ZLIB) {
         DEBUG "Uncompressing data";
-        $tuple->{data} = Compress::Zlib::memGunzip ($tuple->{data});
+        $data = Compress::Zlib::memGunzip ($data);
     }
 
-    return $tuple;
+    return ($data, $flags);
 }
 
 sub compress {
-    my ($self, $tuple, $command) = @_;
+    my ($self, $command, $data, $flags) = @_;
 
     DEBUG "Entering compress";
-    return unless defined $tuple->{data};
+    return unless defined $data;
 
     DEBUG "Have data";
-    my $len = bytes::length ($tuple->{data});
+    my $len = bytes::length ($data);
 
     DEBUG "Checking for Zlib";
 
@@ -46,18 +46,18 @@ sub compress {
 
         if ($compressable) {
             DEBUG "Compressing data";
-            my $c_val = Compress::Zlib::memGzip ($tuple->{data});
+            my $c_val = Compress::Zlib::memGzip ($data);
             my $c_len = bytes::length ($c_val);
 
             if ($c_len < $len * (1 - COMPRESS_SAVINGS)) {
                 DEBUG "Compressing is a win";
-                $tuple->{data} = $c_val;
-                $tuple->{flags} |= F_COMPRESS;
+                $data = $c_val;
+                $flags |= F_COMPRESS;
             }
         }
     }
 
-    return $tuple;
+    return ($data, $flags);
 }
 
 1;
