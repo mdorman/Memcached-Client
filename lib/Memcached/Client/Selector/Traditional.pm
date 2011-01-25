@@ -48,8 +48,8 @@ Jamie McCarthy <jamie@mccarthy.vg>
 
 sub set_servers {
     my ($self, $list) = @_;
+    DEBUG "list: %s", $list;
     if ($list) {
-        DEBUG "S: Setting server list to %s", $list;
         my $count = scalar @{$list};
         if (1 < $count) {
             $self->{buckets} = [];
@@ -63,9 +63,8 @@ sub set_servers {
                 }
             }
             $self->{bucketcount} = scalar @{$self->{buckets}};
-            DEBUG "S: Bucket list is %s, bucket count is %d", $self->{buckets}, $self->{bucketcount};
+            DEBUG "bucket count: %d\nbucket list: %s", $self->{bucketcount}, $self->{buckets};
         } elsif (1 == $count) {
-            # Handle ->set_servers ([['localhost:11211' => 5]])
             $self->{_single_sock} = ref $list->[0] ? $list->[0]->[0] : $list->[0];
         }
     } else {
@@ -84,7 +83,7 @@ sub get_server {
     return unless $self->{buckets};
     $namespace ||= "";
     my $hash = ref $key ? int ($key->[0]) : crc32 ($namespace . $key) >> 16 & 0x7fff;
-    DEBUG "S: Hash value is %s, bucket # is %s, bucket value is %s", $hash, $hash % $self->{bucketcount}, $self->{buckets}->[$hash % $self->{bucketcount}];
+    DEBUG "Hash is %d, bucket # %d, bucket %s", $hash, $hash % $self->{bucketcount}, $self->{buckets}->[$hash % $self->{bucketcount}];
     return $self->{buckets}->[$hash % $self->{bucketcount}];
 }
 
