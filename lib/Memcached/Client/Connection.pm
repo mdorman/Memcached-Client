@@ -6,7 +6,7 @@ use warnings;
 use AnyEvent qw{};
 use AnyEvent::Handle qw{};
 use Memcached::Client::Log qw{DEBUG INFO};
-use Scalar::Util qw{weaken};
+use Scalar::Util qw{refaddr weaken};
 
 =head1 SYNOPSIS
 
@@ -23,9 +23,12 @@ Its only parameter is the server specification, in the form of
 
 =cut
 
+my $id = 0;
+
 sub new {
     my ($class, $server, $preparation) = @_;
-    my $self = bless {attempts => 0, last => 0, prepare => $preparation, requests => 0, queue => [], server => $server}, $class;
+    my $self = bless {attempts => 0, id => $id++, last => 0, prepare => $preparation, requests => 0, queue => [], server => $server}, $class;
+    $self->debug ("Constructed");
     return $self;
 }
 
@@ -48,14 +51,15 @@ sub connect {
     my ($host, $port) = split (/:/, $self->{server});
     $port ||= 11211;
 
-    DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
+    $self->debug ("connecting to [%s]", $self->{server});
 
     $callback->() if $self->{handle};
     $self->{handle} ||= AnyEvent::Handle->new (connect => [$host, $port],
                                                keepalive => 1,
                                                on_connect => sub {
+                                                   local *__ANON__ = "Memcached::Client::Connection::on_connect";
                                                    my ($handle, $host, $port) = @_;
-                                                   DEBUG "C [%s]: connected", $weak->{server};
+                                                   $self->debug ("connected");
                                                    $weak->{attempts} = 0;
                                                    $weak->{last} = 0;
                                                    $weak->{requests} = 0;
@@ -63,32 +67,44 @@ sub connect {
                                                    $weak->dequeue;
                                                },
                                                on_error => sub {
+                                                   local *__ANON__ = "Memcached::Client::Connection::on_error";
                                                    my ($handle, $fatal, $message) = @_;
                                                    my $last = $weak->{last} ? AE::time - $weak->{last} : 0;
                                                    my $pending = scalar @{$weak->{queue}};
                                                    # Need this here in case connection fails
                                                    if ($message eq "Broken pipe") {
-                                                       DEBUG "Requeueing broken pipe for %s", $weak->{server};
+                                                       $self->debug ("reconnecting broken pipe");
                                                        delete $weak->{handle};
                                                        $weak->connect;
                                                    } elsif ($message eq "Connection timed out" and ++$weak->{attempts} < 5) {
-                                                       DEBUG "Requeueing connection timeout for %s", $weak->{server};
+                                                       $self->debug ("reconnecting timeout");
                                                        delete $weak->{handle};
                                                        $weak->connect ($callback);
                                                    } else {
-                                                       INFO "C [%s]: %s, %d attempts, %d completed, %d pending, %f last", $weak->{server}, $message, $weak->{attempts}, $weak->{requests}, $pending, $last;
+                                                       INFO "%d: %s, %d attempts, %d completed, %d pending, %f last", $self->{id}, $message, $weak->{attempts}, $weak->{requests}, $pending, $last;
                                                        $callback->() if ($callback);
                                                        delete $weak->{handle};
                                                        $weak->fail;
                                                    }
                                                },
                                                on_prepare => sub {
+                                                   local *__ANON__ = "Memcached::Client::Connection::on_prepare";
                                                    my ($handle) = @_;
-                                                   DEBUG "C [%s]: preparing handle", $weak->{server};
+                                                   $self->debug ("preparing handle");
                                                    $weak->{prepare}->($handle) if ($weak->{prepare});
                                                    return $weak->{connect_timeout} || 0.5;
-                                               },
-                                               peername => $self->{server});
+                                               });
+}
+
+=method debug
+
+=cut
+
+sub debug {
+    my $self = shift;
+    my $message = '%d: ' . shift;
+    unshift @_, $message, $self->{id};
+    goto &DEBUG;
 }
 
 =method disconnect
@@ -98,9 +114,9 @@ sub connect {
 sub disconnect {
     my ($self) = @_;
 
-    DEBUG "C [%s]: disconnecting", $self->{server};
+    $self->debug ("disconnecting");
     if (my $handle = $self->{handle}) {
-        DEBUG "C [%s]: got handle", $self->{server};
+        $self->debug ("got handle");
         eval {
             $handle->stop_read;
             $handle->push_shutdown();
@@ -108,7 +124,7 @@ sub disconnect {
         };
     }
 
-    DEBUG "C [%s]: failing all requests", $self->{server};
+    $self->debug ("failing all requests");
     $self->fail;
 }
 
@@ -120,13 +136,26 @@ the queue of requests to be processed.
 =cut
 
 sub enqueue {
-    my ($self, $request, $failback) = @_;
+    my ($self, $request) = @_;
     $self->connect unless ($self->{handle});
-    DEBUG "C [%s]: queuing request", $self->{server};
+    $self->debug ('queueing request');
     $self->{last} = AE::time;
-    push @{$self->{queue}}, {request => $request, failback => $failback};
+    push @{$self->{queue}}, $request;
     $self->dequeue;
     return 1;
+}
+
+=method complete
+
+=cut
+
+sub complete {
+    my ($self) = @_;
+    $self->{requests}++;
+    $self->debug ("Done with request");
+    my $finished = delete $self->{executing};
+    $finished->complete;
+    $self->dequeue;
 }
 
 =method dequeue
@@ -145,17 +174,10 @@ sub dequeue {
     my ($self) = @_;
     my $weak = $self; weaken ($weak);
     return if ($self->{executing});
-    DEBUG "C [%s]: checking for job", $self->{server};
+    $self->debug ("Checking for job");
     return unless ($self->{executing} = shift @{$self->{queue}});
-    DEBUG "C [%s]: executing", $self->{server};
-    $self->{executing}->{request}->($self->{handle},
-                                    sub {
-                                        $weak->{requests}++;
-                                        DEBUG "C [%s]: done with request", $weak->{server};
-                                        delete $weak->{executing};
-                                        $weak->dequeue;
-                                    },
-                                    $self->{server});
+    $self->debug ("Executing");
+    $self->{executing}->run ($self);
 }
 
 =method fail
@@ -167,7 +189,7 @@ invokes the failbacks of all queued requests.
 
 sub fail {
     my ($self) = @_;
-    DEBUG "C [%s]: failing requests", $self->{server};
+    $self->debug ("Failing requests");
     my @requests;
 
     if (my $request = delete $self->{executing}) {
@@ -178,8 +200,8 @@ sub fail {
     }
 
     for my $request (@requests) {
-        DEBUG "C [%s]: failing request %s", $self->{server}, $request;
-        $request->{failback}->();
+        $self->debug ("Failing request %s", $request);
+        $request->complete;
         undef $request;
     }
 }

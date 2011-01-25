@@ -7,169 +7,142 @@ use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Protocol};
 
 sub __cmd {
-    return join (' ', grep {defined} @_) . "\r\n";
+    my $command = join (' ', grep {defined} @_);
+    return "$command\r\n";
 }
 
-{
-    my $generator = sub {
-        my ($name) = @_;
-        sub {
-            my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
-            my $command = __cmd ($name, $key, $flags, $expiration, length $value) . __cmd ($value);
-            $handle->push_write ($command);
-            $handle->push_read (line => sub {
-                                    my ($handle, $line) = @_;
-                                    DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                    $cv->send ($line eq 'STORED' ? 1 : 0);
-                                });
-        }
-    };
-
-    *__add     = $generator->("add");
-    *__append  = $generator->("append");
-    *__prepend = $generator->("prepend");
-    *__replace = $generator->("replace");
-    *__set     = $generator->("set");
+sub __add {
+    my ($self, $r, $c) = @_;
+    DEBUG "%s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{data};
+    my $command = __cmd ($r->{command}, $r->{key}, $r->{flags}, $r->{expiration}, length $r->{data}) . __cmd ($r->{data});
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 $r->result ($line eq 'STORED' ? 1 : 0);
+                                 $c->complete;
+                             });
 }
 
-{
-    my $generator = sub {
-        my ($name) = @_;
-        return sub {
-            my ($self, $handle, $cv, $key, $delta, $initial) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
-            my $command = __cmd ($name, $key, $delta);
-            DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-            $handle->push_write ($command);
-            $handle->push_read (line => sub {
-                                    my ($handle, $line) = @_;
-                                    DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                    if ($line eq 'NOT_FOUND') {
-                                        if ($initial) {
-                                            $command = __cmd (add => $key, 0, 0, length $initial) . __cmd ($initial);
+sub __decr {
+    my ($self, $r, $c) = @_;
+    DEBUG "%s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{delta};
+    my $command = __cmd ($r->{command}, $r->{key}, $r->{delta});
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 if ($line eq 'NOT_FOUND') {
+                                     if ($r->{data}) {
+                                            $command = __cmd (add => $r->{key}, 0, 0, length $r->{data}) . __cmd ($r->{data});
                                             $handle->push_write ($command);
-                                            DEBUG "P [%s]: > %s", $handle->{peername}, $command;
                                             $handle->push_read (line => sub {
                                                                     my ($handle, $line) = @_;
-                                                                    DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                                                    $cv->send ($line eq 'STORED' ? $initial : undef);
+                                                                    $r->result ($line eq 'STORED' ? $r->{data} : undef);
+                                                                    $c->complete;
                                                                 });
-                                        } else {
-                                            $cv->send;
-                                        }
-                                    } else {
-                                        $cv->send ($line);
-                                    }
-                                });
-        }
-    };
-
-    *__decr = $generator->("decr");
-    *__incr = $generator->("incr");
+                                     } else {
+                                         $r->result;
+                                         $c->complete
+                                     }
+                                 } else {
+                                     $r->result ($line);
+                                     $c->complete;
+                                 }
+                             });
 }
 
 sub __delete {
-    my ($self, $handle, $cv, $key) = @_;
-    DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
-    my $command = __cmd (delete => $key);
-    $handle->push_write ($command);
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    $handle->push_read (line => sub {
-                            my ($handle, $line) = @_;
-                            DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                            $cv->send ($line eq 'DELETED' ? 1 : 0);
-                        });
+    my ($self, $r, $c) = @_;
+    DEBUG "delete: %s - %s", $c->{server}, $r->{key};
+    my $command = __cmd (delete => $r->{key});
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 $r->result ($line eq 'DELETED' ? 1 : 0);
+                                 $c->complete;
+                             });
 }
 
 sub __flush_all {
-    my ($self, $handle, $cv, $delay) = @_;
-    my $command = $delay ? __cmd (flush_all => $delay) : __cmd ("flush_all");
-    $handle->push_write ($command);
-    DEBUG "P: flush_all: %s", $handle->{peername};
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    $handle->push_read (line => sub {
-                            my ($handle, $line) = @_;
-                            DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                            $cv->send (1);
-                        });
+    my ($self, $r, $c) = @_;
+    DEBUG "flush_all: %s", $c->{server};
+    my $command = $r->{delay} ? __cmd (flush_all => $r->{delay}) : __cmd ("flush_all");
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 $r->result (1);
+                                 $c->complete;
+                             });
 }
 
 sub __get {
-    my ($self, $handle, $cv, @keys) = @_;
-    for my $key (@keys) {
-        DEBUG "P: get: %s - %s", $handle->{peername}, $key;
-    }
-    my $command = __cmd (get => @keys);
-    $handle->push_write ($command);
-    my ($result);
-    my $code; $code = sub {
-        my ($handle, $line) = @_;
-        DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-        my @bits = split /\s+/, $line;
-        if ($bits[0] eq "VALUE") {
-            my ($key, $flags, $size, $cas) = @bits[1..4];
-            $handle->unshift_read (chunk => $size, sub {
-                                       my ($handle, $data) = @_;
-                                       DEBUG "P [%s]: < %s", $handle->{peername}, $data;
-                                       $result->{$key} = {cas => $cas, data => $data, flags => $flags};
-                                       # Catch the \r\n trailing the value...
-                                       $handle->unshift_read (line => sub {
-                                                                  my ($handle, $line) = @_;
-                                                                  DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                                              });
-                                       # ...and then start looking for another line
-                                       $handle->push_read (line => $code);
-                                   });
-        } else {
-            warn ("Unexpected result $line from $command") unless ($bits[0] eq 'END');
-            undef $code;
-            $cv->send ($result);
-        }
-    };
-    $handle->push_read (line => $code);
+    my ($self, $r, $c) = @_;
+    DEBUG "get: %s - %s", $c->{server}, $r->{key};
+    my $command = __cmd (get => $r->{key});
+    DEBUG "Command %s", $command;
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 DEBUG "Got line %s", $line;
+                                 my @bits = split /\s+/, $line;
+                                 if ($bits[0] eq "VALUE") {
+                                     my ($key, $flags, $size, $cas) = @bits[1..4];
+                                     $c->{handle}->unshift_read (chunk => $size, sub {
+                                                                     my ($handle, $data) = @_;
+                                                                     # Catch the \r\n trailing the value...
+                                                                     $handle->unshift_read (line => sub {
+                                                                                                my ($handle, $line) = @_;
+                                                                                                $handle->unshift_read (line => sub {
+                                                                                                                           my ($handle, $line) = @_;
+                                                                                                                           warn ("Unexpected result $line from $command") unless ($line eq 'END');
+                                                                                                                           $r->result ($data, $flags, $cas);
+                                                                                                                           $c->complete;
+                                                                                                                       });
+                                                                                            });
+                                                                 });
+                                 } elsif ($bits[0] eq "END") {
+                                     $r->result;
+                                     $c->complete;
+                                 }
+                             });
 }
 
 sub __stats {
-    my ($self, $handle, $cv, $name) = @_;
-    my $command = $name ? __cmd (stats => $name) : __cmd ("stats");
-    $handle->push_write ($command);
-    DEBUG "P: stats: %s", $handle->{peername};
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    my ($result);
-    my $code; $code = sub {
+    my ($self, $r, $c) = @_;
+    DEBUG "P: stats: %s", $c->{server};
+    my $command = $r->{command} ? __cmd (stats => $r->{command}) : __cmd ("stats");
+    $c->{handle}->push_write ($command);
+    my ($code, $result);
+    $code = sub {
         my ($handle, $line) = @_;
-        DEBUG "P [%s]: < %s", $handle->{peername}, $line;
         my @bits = split /\s+/, $line;
         if ($bits[0] eq 'STAT') {
             $result->{$bits[1]} = $bits[2];
-            $handle->push_read (line => $code);
+            $c->{handle}->push_read (line => $code);
         } else {
             warn ("Unexpected result $line from $command") unless ($bits[0] eq 'END');
             undef $code;
-            $cv->send ($result);
+            $r->result ($result);
+            $c->complete;
         }
     };
-    $handle->push_read (line => $code);
+    $c->{handle}->push_read (line => $code);
 }
 
 sub __version {
-    my ($self, $handle, $cv) = @_;
+    my ($self, $r, $c) = @_;
+    DEBUG "P: version: %s", $c->{server};
     my $command = __cmd ("version");
-    $handle->push_write ($command);
-    DEBUG "P: version: %s", $handle->{peername};
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    $handle->push_read (line => sub {
-                            my ($handle, $line) = @_;
-                            DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                            my @bits = split /\s+/, $line;
-                            if ($bits[0] eq 'VERSION') {
-                                $cv->send ($bits[1]);
-                            } else {
-                                warn ("Unexpected result $line from $command");
-                                $cv->send;
-                            }
-                        });
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 my @bits = split /\s+/, $line;
+                                 if ($bits[0] eq 'VERSION') {
+                                     $r->result ($bits[1]);
+                                 } else {
+                                     warn ("Unexpected result $line from $command");
+                                 }
+                                 $c->complete;
+                             });
 }
 
 1;

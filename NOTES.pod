@@ -1,0 +1,32 @@
+=head1 How it all fits together
+
+The Memcached::Client object is just the orchestrator.  It does some
+general housekeeping and the like, but the real work is in the play of
+the Connection, Request and Protocol classes (with some help from the
+Serializer, Compressor and Selectors).
+
+During module load, we construct a bunch of methods that are really
+just curried functions creating instances of the various Request
+classes.
+
+When you make a request, things go like this:
+
+C<$client->get> creates an object in the M::C::Request::GetSingle
+class that has a command of 'get', a reference to the
+Memcached::Client object, and all of your arguments.
+
+During construction, this object queues itself to the correct server
+(based on the hash of the key you passed in).  And there it sits.
+
+The connection object works its way through its queue (if there's
+nothing else in the queue when you add a new request, it will be
+handled immediately, but that's just an optimization) and comes to
+your request object.
+
+It calls the ->run method on your request object, passing it a
+reference to itself.
+
+The ->run method
+
+=cut
+

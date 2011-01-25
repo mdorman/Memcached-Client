@@ -57,7 +57,7 @@ sub compress {
         }
     }
 
-    return ($data, $flags);
+    return ($command, $data, $flags);
 }
 
 1;

@@ -47,12 +47,16 @@ BEGIN {
         local $Data::Dumper::Quotekeys = 0;
         local $Data::Dumper::Sortkeys = 1;
         local $Data::Dumper::Terse = 1;
+        my @callerinfo = caller 1;
+        $callerinfo[3] ||= 'main';
+        $callerinfo[3] =~ s/^Memcached::Client::/M::C::/;
         my $format = shift or return;
         chomp (my $entry = @_ ? sprintf $format, map { defined $_ ? ref $_ ? Dumper $_ : $_ : '[undef]' } @_ : $format);
+        my $output = "$callerinfo[3] $entry\n";
         if ($ENV{MCTEST}) {
-            $log->print ("$entry\n");
+            $log->print ($output);
         } else {
-            warn "$entry\n";
+            warn $output;
         }
     };
 
