@@ -53,12 +53,10 @@ my @tests = (['connect', 1,
 
              ['get_multi',
               '->get_multi without a list'],
-             ['get_multi', [],
-              '->get_multi with an empty list'],
-             ['get_multi', ['bar', 'foo', 'porridge'],
+             ['get_multi', 'bar', 'foo', 'porridge',
               '->get with all keys set so far'],
 
-             ['get_multi', [['37', 'llama'], 'bar', 'foo'],
+             ['get_multi', ['37', 'llama'], 'bar', 'foo',
               '->get with all keys set so far'],
 
              ['replace',
@@ -163,7 +161,7 @@ my @tests = (['connect', 1,
              ['get', 'foo',
               '->get to verify ->decr'],
 
-             ['get_multi', ['bar', 'foo'],
+             ['get_multi', 'bar', 'foo',
               '->get with all keys set so far'],
 
              ['incr_multi', [['foo']],
@@ -178,7 +176,7 @@ my @tests = (['connect', 1,
              ['flush_all',
               '->flush_all to clear servers'],
 
-             ['get_multi', ['bar', 'foo'],
+             ['get_multi', 'bar', 'foo',
               '->get with all keys set so far']);
 
 my $memcached = find_memcached ();

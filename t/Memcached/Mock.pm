@@ -158,10 +158,10 @@ sub get {
 }
 
 sub get_multi {
-    my ($self, $keys) = @_;
-    return {} unless (defined $keys and ref $keys eq "ARRAY" and @{$keys});
+    my ($self, @keys) = @_;
+    return {} unless (@keys);
     my %rv;
-    for my $key (@{$keys}) {
+    for my $key (@keys) {
         next unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
         my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or next;
         my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
