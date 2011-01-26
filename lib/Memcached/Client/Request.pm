@@ -13,7 +13,14 @@ Memcached::Client::Request and its subclasses are responsible for
 managing the completion of a particular request to the memcached
 cluster.
 
-=method new
+=method generate
+
+Returns a reference to an anonymous subroutine that curries in the
+generators arguments (usually just a particular command, but perhaps
+more) to the creation of a new object, and then immediately calls
+C<wait()>.
+
+Used by Memcached::Client to create its methods.
 
 C<new()> builds a new request object.
 
@@ -39,34 +46,43 @@ C<generate()> creates anonymous functions that do just that.
 
 =cut
 
-sub new {
-    my $self = bless {}, shift;
+sub generate {
+    my ($class, $command) = @_;
 
-    $self->{command} = shift;
-    DEBUG "Command is %s", $self->{command};
+    DEBUG "Class is %s, Command is %s", $class, $command;
 
-    $self->{client} = shift;
+    return sub {
+        local *__ANON__ = "Memcached::Client::Request::${class}::new";
 
-    DEBUG "Checking for condvar/callback";
-    if (ref $_[-1] eq 'AnyEvent::CondVar' or ref $_[-1] eq 'CODE') {
-        DEBUG "Found condvar/callback";
-        $self->{cb} = pop;
-    } else {
-        DEBUG "Making own condvar";
-        $self->{cb} = AE::cv;
-        $self->{wait} = 1;
+        DEBUG "%s, %s", $command, \@_;
+
+        my $self = bless {}, $class;
+
+        $self->{command} = $command;
+
+        $self->{client} = shift;
+
+        DEBUG "Checking for condvar/callback";
+        if (ref $_[-1] eq 'AnyEvent::CondVar' or ref $_[-1] eq 'CODE') {
+            DEBUG "Found condvar/callback";
+            $self->{cb} = pop;
+        } else {
+            DEBUG "Making own condvar";
+            $self->{cb} = AE::cv;
+            $self->{wait} = 1;
+        }
+
+        DEBUG "Processing arguments: %s", \@_;
+        if ($self->init (@_)) {
+            DEBUG "Arguments valid, submitting";
+            $self->submit;
+        } else {
+            DEBUG "Arguments invalid, completing";
+            $self->complete;
+        }
+
+        $self->wait;
     }
-
-    DEBUG "Processing arguments: %s", \@_;
-    if ($self->init (@_)) {
-        DEBUG "Arguments valid, submitting";
-        $self->submit;
-    } else {
-        DEBUG "Arguments invalid, completing";
-        $self->complete;
-    }
-
-    $self;
 }
 
 =method complete
@@ -89,23 +105,6 @@ sub complete {
         $result = $self->{default};
     }
     $self->{cb}->($result);
-}
-
-=method generate
-
-Returns a reference to an anonymous subroutine that curries in the
-generators arguments (usually just a particular command, but perhaps
-more) to the creation of a new object, and then immediately calls
-C<wait()>.
-
-Used by Memcached::Client to create its methods.
-
-=cut
-
-sub generate {
-    my ($class, @args) = @_;
-    croak "You must give me some arguments to curry\n" unless (@args);
-    sub { $class->new (@args, @_)->wait }
 }
 
 =method init
@@ -137,19 +136,19 @@ request when all individual responses have been returned.
 =cut
 
 sub multicall {
-    my ($self, $class, $rawkey, @args) = @_;
+    my ($self, $rawkey, @args) = @_;
     my $key = (ref $rawkey ? $rawkey->[1] : $rawkey);
     DEBUG "Noting that we are waiting on %s", $key;
     $self->{partial}->{$key} = 1;
-    my $new = "Memcached::Client::Request::$class";
-    $new->new ($self->{command}, $self->{client}, $rawkey, @args, sub {
-        my ($value) = @_;
-        local *__ANON__ = "Memcached::Client::Request::multicall::callback";
-        DEBUG "Noting that we received %s for %s", $value, $key;
-        $self->{result}->{$key} = $value if (defined $value);
-        delete $self->{partial}->{$key};
-        $self->complete unless keys %{$self->{partial}};
-    });
+    my $command = $self->{command};
+    $self->{client}->$command  ($rawkey, @args, sub {
+                           my ($value) = @_;
+                           local *__ANON__ = "Memcached::Client::Request::multicall::callback";
+                           DEBUG "Noting that we received %s for %s", $value, $key;
+                           $self->{result}->{$key} = $value if (defined $value);
+                           delete $self->{partial}->{$key};
+                           $self->complete unless keys %{$self->{partial}};
+                       });
 }
 
 =method result
@@ -202,6 +201,30 @@ sub wait {
     }
 }
 
+package Memcached::Client::Request::Add;
+# ABSTRACT: Class to manage Memcached::Client server request
+
+use Memcached::Client::Log qw{DEBUG};
+use base qw{Memcached::Client::Request};
+
+sub init {
+    my ($self, $key, $value, $expiration) = @_;
+    $self->{type} = "__add";
+    $self->{default} = 0;
+    $self->{rawkey} = $key;
+    @{$self}{qw{key server}} = $self->{client}->__hash ($key);
+    @{$self}{qw{command data flags}} = $self->{client}->{compressor}->compress ($self->{client}->{serializer}->serialize ($self->{command}, $value));
+    $self->{expiration} = int ($expiration || 0);
+    DEBUG "Argumentatives: %s", {map {$_, $self->{$_}} qw{rawkey key server command data flags expiration}};
+    return ($self->{server} and $self->{key} and $self->{data});
+}
+
+*Memcached::Client::Request::add = Memcached::Client::Request::Add->generate ("add");
+*Memcached::Client::Request::append = Memcached::Client::Request::Add->generate ("append");
+*Memcached::Client::Request::prepend = Memcached::Client::Request::Add->generate ("prepend");
+*Memcached::Client::Request::replace = Memcached::Client::Request::Add->generate ("replace");
+*Memcached::Client::Request::set = Memcached::Client::Request::Add->generate ("set");
+
 package Memcached::Client::Request::AddMulti;
 # ABSTRACT: Class to manage Memcached::Client server request
 
@@ -220,63 +243,36 @@ sub submit {
     my ($self) = @_;
     DEBUG "Submitting";
     for my $tuple (@{$self->{tuples}}) {
-        $self->multicall (AddSingle => @{$tuple});
+        $self->multicall (@{$tuple});
     }
 }
 
-package Memcached::Client::Request::AddSingle;
+*Memcached::Client::Request::add_multi = Memcached::Client::Request::AddMulti->generate ("add");
+*Memcached::Client::Request::append_multi = Memcached::Client::Request::AddMulti->generate ("append");
+*Memcached::Client::Request::prepend_multi = Memcached::Client::Request::AddMulti->generate ("prepend");
+*Memcached::Client::Request::replace_multi = Memcached::Client::Request::AddMulti->generate ("replace");
+*Memcached::Client::Request::set_multi = Memcached::Client::Request::AddMulti->generate ("set");
+
+package Memcached::Client::Request::Decr;
 # ABSTRACT: Class to manage Memcached::Client server request
 
 use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Request};
 
 sub init {
-    my ($self, $key, $value, $expiration) = @_;
-    $self->{type} = "__add";
-    $self->{default} = 0;
+    my ($self, $key, $delta, $initial) = @_;
+    DEBUG "arguments are %s", \@_;
+    $self->{type} = "__decr";
+    $self->{default} = undef;
     $self->{rawkey} = $key;
     @{$self}{qw{key server}} = $self->{client}->__hash ($key);
-    @{$self}{qw{command data flags}} = $self->{client}->{compressor}->compress ($self->{client}->{serializer}->serialize ($self->{command}, $value));
-    $self->{expiration} = int ($expiration || 0);
-    DEBUG "Argumentatives: %s", {map {$_, $self->{$_}} qw{rawkey key server command data flags expiration}};
-    return ($self->{server} and $self->{key} and $self->{data});
+    $self->{delta} = int ($delta || 1);
+    $self->{data} = defined $initial ? int ($initial) : undef;
+    return ($self->{server} and $self->{key} and $self->{delta});
 }
 
-package Memcached::Client::Request::BroadcastMulti;
-# ABSTRACT: Class to manage Memcached::Client server request
-
-use Memcached::Client::Log qw{DEBUG};
-use base qw{Memcached::Client::Request};
-
-sub init {
-    my ($self, $command, @arguments) = @_;
-    $self->{default} = {};
-    $self->{arguments} = \@arguments;
-    return scalar keys %{$self->{client}->{servers}};
-}
-
-sub submit {
-    my ($self) = @_;
-    for my $server (keys %{$self->{client}->{servers}}) {
-        $self->multicall (BroadcastSingle => $server, @{$self->{arguments}});
-    }
-}
-
-package Memcached::Client::Request::BroadcastSingle;
-# ABSTRACT: Class to manage Memcached::Client server request
-
-use Memcached::Client::Log qw{DEBUG};
-use base qw{Memcached::Client::Request};
-
-sub init {
-    my ($self, $server, @arguments) = @_;
-    DEBUG "Arguments are: %s", [$server, @arguments];
-    $self->{type} = "__$self->{command}";
-    $self->{default} = undef;
-    $self->{server} = $server;
-    $self->{arguments} = \@arguments;
-    return exists $self->{client}->{servers}->{$self->{server}};
-}
+*Memcached::Client::Request::decr = Memcached::Client::Request::Decr->generate ("decr");
+*Memcached::Client::Request::incr = Memcached::Client::Request::Decr->generate ("incr");
 
 package Memcached::Client::Request::DecrMulti;
 # ABSTRACT: Class to manage Memcached::Client server request
@@ -295,27 +291,30 @@ sub init {
 sub submit {
     my ($self) = @_;
     for my $tuple (@{$self->{tuples}}) {
-        $self->multicall (DecrSingle => @{$tuple});
+        $self->multicall (@{$tuple});
     }
 }
 
-package Memcached::Client::Request::DecrSingle;
+*Memcached::Client::Request::decr_multi = Memcached::Client::Request::DecrMulti->generate ("decr");
+*Memcached::Client::Request::incr_multi = Memcached::Client::Request::DecrMulti->generate ("incr");
+
+package Memcached::Client::Request::Delete;
 # ABSTRACT: Class to manage Memcached::Client server request
 
 use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Request};
 
 sub init {
-    my ($self, $key, $delta, $initial) = @_;
+    my ($self, $key) = @_;
     DEBUG "arguments are %s", \@_;
-    $self->{type} = "__decr";
-    $self->{default} = undef;
+    $self->{type} = "__delete";
+    $self->{default} = 0;
     $self->{rawkey} = $key;
     @{$self}{qw{key server}} = $self->{client}->__hash ($key);
-    $self->{delta} = int ($delta || 1);
-    $self->{data} = defined $initial ? int ($initial) : undef;
-    return ($self->{server} and $self->{key} and $self->{delta});
+    return ($self->{server} and $self->{key});
 }
+
+*Memcached::Client::Request::delete = Memcached::Client::Request::Delete->generate ("delete");
 
 package Memcached::Client::Request::DeleteMulti;
 # ABSTRACT: Class to manage Memcached::Client server request
@@ -334,48 +333,13 @@ sub init {
 sub submit {
     my ($self) = @_;
     for my $key (@{$self->{keys}}) {
-        $self->multicall (DeleteSingle => $key);
+        $self->multicall ($key);
     }
 }
 
-package Memcached::Client::Request::DeleteSingle;
-# ABSTRACT: Class to manage Memcached::Client server request
+*Memcached::Client::Request::delete_multi = Memcached::Client::Request::DeleteMulti->generate ("delete");
 
-use Memcached::Client::Log qw{DEBUG};
-use base qw{Memcached::Client::Request};
-
-sub init {
-    my ($self, $key) = @_;
-    DEBUG "arguments are %s", \@_;
-    $self->{type} = "__delete";
-    $self->{default} = 0;
-    $self->{rawkey} = $key;
-    @{$self}{qw{key server}} = $self->{client}->__hash ($key);
-    return ($self->{server} and $self->{key});
-}
-
-package Memcached::Client::Request::GetMulti;
-# ABSTRACT: Class to manage Memcached::Client server request
-
-use Memcached::Client::Log qw{DEBUG};
-use base qw{Memcached::Client::Request};
-
-sub init {
-    my ($self, @keys) = @_;
-    DEBUG "arguments are %s", \@_;
-    $self->{default} = {};
-    $self->{keys} = \@keys;
-    return scalar @keys;
-}
-
-sub submit {
-    my ($self) = @_;
-    for my $key (@{$self->{keys}}) {
-        $self->multicall (GetSingle => $key);
-    }
-}
-
-package Memcached::Client::Request::GetSingle;
+package Memcached::Client::Request::Get;
 # ABSTRACT: Class to manage Memcached::Client server request
 
 use Memcached::Client::Log qw{DEBUG};
@@ -395,5 +359,120 @@ sub result {
     my ($self, $data, $flags, $cas) = @_;
     $self->{result} = $self->{client}->{serializer}->deserialize ($self->{client}->{compressor}->decompress ($data, $flags));
 }
+
+*Memcached::Client::Request::get = Memcached::Client::Request::Get->generate ("get");
+
+package Memcached::Client::Request::GetMulti;
+# ABSTRACT: Class to manage Memcached::Client server request
+
+use Memcached::Client::Log qw{DEBUG};
+use base qw{Memcached::Client::Request};
+
+sub init {
+    my ($self, @keys) = @_;
+    DEBUG "arguments are %s", \@_;
+    $self->{default} = {};
+    $self->{keys} = \@keys;
+    return scalar @keys;
+}
+
+sub submit {
+    my ($self) = @_;
+    for my $key (@{$self->{keys}}) {
+        $self->multicall ($key);
+    }
+}
+
+*Memcached::Client::Request::get_multi = Memcached::Client::Request::GetMulti->generate ("get");
+
+package Memcached::Client::Request::Broadcast;
+# ABSTRACT: Class to manage Memcached::Client server request
+
+use Memcached::Client::Log qw{DEBUG};
+use base qw{Memcached::Client::Request};
+
+sub init {
+    my ($self, $command, @arguments) = @_;
+    $self->{type} = "__$self->{command}";
+    $self->{default} = {};
+    $self->{arguments} = \@arguments;
+    return scalar keys %{$self->{client}->{servers}};
+}
+
+=method result
+
+Our specialized submit routine, that constructs a BroadcastRequest for
+each server and enqueues it.
+
+=cut
+
+sub result {
+    my ($self, $server, $value) = @_;
+    DEBUG "Server %s gave result %s", $server, $value;
+    $self->{result}->{$server} = $value if (defined $value);
+    delete $self->{partial}->{$server};
+    $self->complete unless keys %{$self->{partial}};
+}
+
+=method submit
+
+Our specialized submit routine, that constructs a BroadcastRequest for
+each server and enqueues it.
+
+=cut
+
+sub submit {
+    my ($self) = @_;
+    DEBUG "Submitting";
+    for my $server (keys %{$self->{client}->{servers}}) {
+        my $request = Memcached::Client::Request::BroadcastRequest->new ($self, $server);
+        $self->{client}->{servers}->{$server}->enqueue ($request);
+        $self->{partial}->{$server}++;
+    }
+}
+
+package Memcached::Client::Request::BroadcastRequest;
+# ABSTRACT: Class to manage Memcached::Client server request
+
+use Memcached::Client::Log qw{DEBUG};
+
+sub new {
+    my ($class, $command, $server) = @_;
+    my $self = {command => $command, server => $server};
+    bless $self, $class;
+}
+
+=method complete
+
+=cut
+
+sub complete {
+    my ($self) = @_;
+    $self->{command}->result ($self->{server}, $self->{result});
+}
+
+=method result
+
+=cut
+
+sub result {
+    my ($self, $value) = @_;
+    DEBUG "$self received result %s", $value;
+    $self->{result} = $value if (defined $value);
+}
+
+=method run
+
+=cut
+
+sub run {
+    my ($self, $connection) = @_;
+    my $command = $self->{command}->{type};
+    $self->{command}->{client}->{protocol}->$command ($self, $connection);
+}
+
+*Memcached::Client::Request::flush_all = Memcached::Client::Request::Broadcast->generate ("flush_all");
+*Memcached::Client::Request::stats = Memcached::Client::Request::Broadcast->generate ("stats");
+*Memcached::Client::Request::version = Memcached::Client::Request::Broadcast->generate ("version");
 
 1;

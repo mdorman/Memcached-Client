@@ -419,7 +419,7 @@ returned.
 
 =cut
 
-*add = Memcached::Client::Request::AddSingle->generate ("add");
+*add = \&Memcached::Client::Request::add;
 
 =method add_multi
 
@@ -435,7 +435,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-*add_multi = Memcached::Client::Request::AddMulti->generate ("add");
+*add_multi = \&Memcached::Client::Request::add_multi;
 
 =method append
 
@@ -449,7 +449,7 @@ returned.
 
 =cut
 
-*append = Memcached::Client::Request::AddSingle->generate ("append");
+*append = \&Memcached::Client::Request::append;
 
 =method append_multi
 
@@ -465,7 +465,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-*append_multi = Memcached::Client::Request::AddMulti->generate ("append");
+*append_multi = \&Memcached::Client::Request::append_multi;
 
 =method decr
 
@@ -483,7 +483,7 @@ undef will be the result.
 
 =cut
 
-*decr = Memcached::Client::Request::DecrSingle->generate ("decr");
+*decr = \&Memcached::Client::Request::decr;
 
 =method decr_multi
 
@@ -501,7 +501,7 @@ undef will be the result.
 
 =cut
 
-*decr_multi = Memcached::Client::Request::DecrMulti->generate ("decr");
+*decr_multi = \&Memcached::Client::Request::decr_multi;
 
 =method delete
 
@@ -514,7 +514,7 @@ result.
 
 =cut
 
-*delete = Memcached::Client::Request::DeleteSingle->generate ("delete");
+*delete = \&Memcached::Client::Request::delete;
 
 =method delete_multi
 
@@ -528,7 +528,7 @@ result.
 
 =cut
 
-*delete_multi = Memcached::Client::Request::DeleteMulti->generate ("delete");
+*delete_multi = \&Memcached::Client::Request::delete_multi;
 
 =method flush_all
 
@@ -540,7 +540,7 @@ Returns a hashref indicating which servers the flush succeeded on.
 
 =cut
 
-*flush_all = Memcached::Client::Request::BroadcastMulti->generate ("flush_all");
+*flush_all = \&Memcached::Client::Request::flush_all;
 
 =method get
 
@@ -550,7 +550,7 @@ Retrieves the specified key from the cache, otherwise returning undef.
 
 =cut
 
-*get = Memcached::Client::Request::GetSingle->generate ("get");
+*get = \&Memcached::Client::Request::get;
 
 =method get_multi
 
@@ -561,7 +561,7 @@ key => value pairs.
 
 =cut
 
-*get_multi = Memcached::Client::Request::GetMulti->generate ("get");
+*get_multi = \&Memcached::Client::Request::get_multi;
 
 =method incr
 
@@ -579,7 +579,7 @@ undef will be the result.
 
 =cut
 
-*incr = Memcached::Client::Request::DecrSingle->generate ("incr");
+*incr = \&Memcached::Client::Request::incr;
 
 =method incr_multi
 
@@ -597,7 +597,7 @@ undef will be the result.
 
 =cut
 
-*incr_multi = Memcached::Client::Request::DecrMulti->generate ("incr");
+*incr_multi = \&Memcached::Client::Request::incr_multi;
 
 =method prepend($key, $value, $cb->($rc));
 
@@ -611,7 +611,7 @@ returned.
 
 =cut
 
-*prepend = Memcached::Client::Request::AddSingle->generate ("prepend");
+*prepend = \&Memcached::Client::Request::prepend;
 
 =method prepend_multi
 
@@ -627,7 +627,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-*prepend_multi = Memcached::Client::Request::AddMulti->generate ("prepend");
+*prepend_multi = \&Memcached::Client::Request::prepend_multi;
 
 =method remove
 
@@ -635,7 +635,7 @@ Alias to delete
 
 =cut
 
-*remove = Memcached::Client::Request::DeleteSingle->generate ("delete");
+*remove = \&Memcached::Client::Request::delete;
 
 =method replace
 
@@ -651,7 +651,7 @@ returned.
 
 =cut
 
-*replace = Memcached::Client::Request::AddSingle->generate ("replace");
+*replace = \&Memcached::Client::Request::replace;
 
 =method replace_multi
 
@@ -667,7 +667,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-*replace_multi = Memcached::Client::Request::AddMulti->generate ("replace");
+*replace_multi = \&Memcached::Client::Request::replace_multi;
 
 =method set()
 
@@ -681,7 +681,7 @@ returned.
 
 =cut
 
-*set = Memcached::Client::Request::AddSingle->generate ("set");
+*set = \&Memcached::Client::Request::set;
 
 =method set_multi
 
@@ -696,7 +696,7 @@ succeeded, 0 means it failed.
 
 =cut
 
-*set_multi = Memcached::Client::Request::AddMulti->generate ("set");
+*set_multi = \&Memcached::Client::Request::set_multi;
 
 =method stats ()
 
@@ -708,7 +708,7 @@ Returns a hashref of hashrefs with the named stats.
 
 =cut
 
-*stats = Memcached::Client::Request::BroadcastMulti->generate ("stats");
+*stats = \&Memcached::Client::Request::stats;
 
 =method version()
 
@@ -720,7 +720,7 @@ Returns a hashref of server => version pairs.
 
 =cut
 
-*version = Memcached::Client::Request::BroadcastMulti->generate ("version");
+*version = \&Memcached::Client::Request::version;
 
 # We use this routine to select our server---it uses the selector to
 # hash the key (assuming we are given a valid key, which it checks)
