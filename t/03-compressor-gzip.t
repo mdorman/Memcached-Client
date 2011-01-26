@@ -19,7 +19,7 @@ is ($compressor->decompress,
     '->decompress should return undef since we gave it nothing to decompress');
 
 is_deeply ([$compressor->compress ('set', 'foo', 0)],
-           ['foo', 0],
+           ['set', 'foo', 0],
            '->compress should return the simple tuple since it is so short');
 
 is_deeply ([$compressor->decompress ('foo', 0)],
@@ -31,7 +31,7 @@ my $longstring = 'a' x 20000;
 my $longgzip = Compress::Zlib::memGzip $longstring;
 
 is_deeply ([$compressor->compress ('set', $longstring, 0)],
-           [$longstring, 0],
+           ['set', $longstring, 0],
            '->compress a very long repetitive string with no threshold');
 
 is_deeply ([$compressor->decompress ($longstring, 0)],
@@ -41,7 +41,7 @@ is_deeply ([$compressor->decompress ($longstring, 0)],
 is ($compressor->compress_threshold (10000), 0, 'Set the compress threshold');
 
 is_deeply ([$compressor->compress ('set', $longstring, 0)],
-           [$longgzip, 2],
+           ['set', $longgzip, 2],
            '->compress a very long repetitive string');
 
 is_deeply ([$compressor->decompress ($longgzip, 2)],
@@ -49,5 +49,5 @@ is_deeply ([$compressor->decompress ($longgzip, 2)],
            '->decompress a very long repetitive string, compare');
 
 is_deeply ([$compressor->compress ('prepend', $longstring, 0)],
-           [$longstring, 0],
+           ['prepend', $longstring, 0],
            '->compress a very long repetitive string with a prepend');
