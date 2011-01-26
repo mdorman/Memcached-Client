@@ -1,5 +1,5 @@
 package Memcached::Client::Request;
-# ABSTRACT: Driver for Memcached::Client requests
+# ABSTRACT: Base class for Memcached::Client request drivers
 
 use strict;
 use warnings;
@@ -12,40 +12,34 @@ use Memcached::Client::Log qw{DEBUG};
 Memcached::Client::Request and its subclasses are responsible for
 managing the completion of a given request to the memcached cluster.
 
-=method generate
+=method C<generate>
 
 Returns a reference to an anonymous subroutine that creates a new
-object in a Memcache::Client::Request subclass, currying in the
-command that is specified as the argument to C<generate()>, and
-expecting to be invoked as a method on a Memcache::Client object.
+object in a C<Memcache::Client::Request> subclass, currying in the
+command that is specified as the argument to C<generate>, and
+expecting to be invoked as a method on a C<Memcache::Client> object.
 
-Each subclass of Memcache::Client::Request is responsible for
-installing whatever commands it knows how to implement into the
-Memcached::Client namespace.
+Each subclass of C<Memcache::Client::Request> is responsible for using
+C<generate> to install whatever commands it knows how to implement
+into the C<Memcached::Client> namespace.
 
-Used by Memcached::Client to create its methods.
-
-C<new()> builds a new request object.
-
-It takes a memcache command name as its first parameter---this is the
-sort of request it will be prepared to handle.  This is intended to be
-curried into a subroutines that actually build objects.
-
-It then expects a reference to the Memcached::Client object (since we
-will need to call back into it).
+The resulting subroutine takes a C<Memcache::Client> object as its
+first parameter, since we will need to call back into it.
 
 It then examines the last argument in the argument list, and if it's a
-code callback or an AnyEvent::CondVar, a reference to the callback or
-condvar is stored for use on completion of the request.  Otherwise, an
-AnyEvent::CondVar is created, and the request is marked as needing to
-manage its own event looping.
+C<coderef> or an C<AnyEvent::CondVar>, it is removed and stored for
+use on completion of the request.  Otherwise, an C<AnyEvent::CondVar>
+is created, and the request is marked as needing to manage its own
+event looping.
 
-The package's C<init()> routine is called with the remainder of the
-arguments, then the C<submit()> routine is called to start the process
-rolling, and then the object is returned.
+The package's C<submit> routine is then called with the remainder of
+the arguments.  If C<submit> returns false, then the submission is
+assumed to have failed and the objects C<complete> routine is called
+to return a result.
 
-For most uses, one can simply call ->wait on the result directly, and
-C<generate()> creates anonymous functions that do just that.
+Finally, if the request is marked as needing to manage its own event
+looping, it will wait on the C<AnyEvent::CondVar> that it created
+earlier.
 
 =cut
 
@@ -80,11 +74,11 @@ sub generate {
     }
 }
 
-=method complete
+=method C<complete>
 
-C<complete()> is by the connection code when the request is finished,
-and it is responsible for invoking the callback to submit the results
-to their consumer.
+C<complete> is called when the request is finished---regardless of
+whether it succeeded or failed---and it is responsible for invoking
+the callback to submit the results to their consumer.
 
 If there has been no result gathered, it will return the default if
 there is one.
@@ -95,15 +89,18 @@ sub complete {
     my ($self) = @_;
     ##DEBUG "Request is completed";
     if (exists $self->{result}) {
+        ##DEBUG "Returning result %s", $self->{result};
         $self->{cb}->($self->{result})
     } elsif (exists $self->{default}) {
+        ##DEBUG "Returning default %s", $self->{default};
         $self->{cb}->($self->{default})
     } else {
+        ##DEBUG "Returning undef";
         $self->{cb}->();
     }
 }
 
-=method multicall
+=method C<multicall>
 
 A helper routine for aggregate requests to manage the multiple
 responses.
@@ -132,7 +129,10 @@ sub multicall {
                                });
 }
 
-=method result
+=method C<result>
+
+Intended to be called by the protocol methods, C<result> records the
+result value that it is given, if it is given one.
 
 =cut
 
@@ -142,7 +142,11 @@ sub result {
     $self->{result} = $value if (defined $value);
 }
 
-=method run
+=method C<run>
+
+Intended to be called by the connection methods, C<run> takes a
+reference to the appropriate connection, and calls the protocol driver
+to start the actual request.
 
 =cut
 
@@ -152,26 +156,36 @@ sub run {
     $self->{client}->{protocol}->$command ($self, $connection);
 }
 
-=method submit 
+=method C<submit>
 
-A default submit routine.  Adequate for the single request classes,
-but it needs to be overridden for the aggregate requests
+C<submit> is a virtual method, to be implemented by subclasses in
+order to do any argument processing and then enqueue the request on
+the appropriate server.
 
 =cut
 
 sub submit {
     my ($self) = @_;
-    ##DEBUG "arguments are %s", \@_;
-    return 0;
-    ##DEBUG "Submitting";
-    $self->{client}->{servers}->{$self->{server}}->enqueue ($self);
+    die "You must implement submit";
 }
 
 package Memcached::Client::Request::Add;
-# ABSTRACT: Class to manage Memcached::Client server request
+# ABSTRACT: Driver for add-style Memcached::Client requests
 
 use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Request};
+
+=method C<submit>
+
+C<submit> accepts a key, value and expiration.  It computes the server
+to receive the request using the key, encodes the data using the
+specified serializer and compressor, and makes sure that the expiration
+is 0 if not otherwise specified.
+
+Assuming that all of server, key and data are present, it enqueues its
+request.
+
+=cut
 
 sub submit {
     my ($self, $key, $value, $expiration) = @_;
@@ -220,6 +234,18 @@ package Memcached::Client::Request::Decr;
 use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Request};
 
+=method C<submit>
+
+C<submit> accepts a key, delta and initial value.  It computes the
+server to receive the request using the key, makes sure that the delta
+is 1 if not otherwise specified, and make sure that the initial value
+is an integer
+
+Assuming that all of server, key and delta are present, it enqueues
+its request.
+
+=cut
+
 sub submit {
     my ($self, $key, $delta, $initial) = @_;
     ##DEBUG "arguments are %s", \@_;
@@ -261,6 +287,15 @@ package Memcached::Client::Request::Delete;
 use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Request};
 
+=method C<submit>
+
+C<submit> accepts a key.  It computes the server to receive the
+request using the key.
+
+Assuming that the server and key are present, it enqueues its request.
+
+=cut
+
 sub submit {
     my ($self, $key) = @_;
     ##DEBUG "arguments are %s", \@_;
@@ -297,6 +332,15 @@ package Memcached::Client::Request::Get;
 
 use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Request};
+
+=method C<submit>
+
+C<submit> accepts a key.  It computes the server to receive the
+request using the key.
+
+Assuming that the server and key are present, it enqueues its request.
+
+=cut
 
 sub submit {
     my ($self, $key) = @_;
@@ -339,6 +383,14 @@ package Memcached::Client::Request::Broadcast;
 
 use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Request};
+
+=method C<submit>
+
+C<submit> accepts a command.  Assuming that there is a list of
+servers, it iterates over all the presently known servers, enqueuing
+the request
+
+=cut
 
 sub submit {
     my ($self, $command, @arguments) = @_;
