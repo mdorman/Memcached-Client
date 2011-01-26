@@ -5,7 +5,6 @@ use strict;
 use warnings;
 use AnyEvent qw{};
 use AnyEvent::Handle qw{};
-use Carp qw{cluck};
 use Memcached::Client::Connection qw{};
 use Memcached::Client::Log qw{DEBUG};
 use Memcached::Client::Request qw{};
