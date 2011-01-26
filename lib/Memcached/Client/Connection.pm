@@ -63,7 +63,7 @@ sub connect {
                                                    $self->{last} = 0;
                                                    $self->{requests} = 0;
                                                    $callback->() if ($callback);
-                                                   $self->{executing}->run if ($self->{executing});
+                                                   $self->{executing}->run ($self) if ($self->{executing});
                                                },
                                                on_error => sub {
                                                    ##local *__ANON__ = "Memcached::Client::Connection::on_error";
