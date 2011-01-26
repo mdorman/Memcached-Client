@@ -49,35 +49,32 @@ C<generate()> creates anonymous functions that do just that.
 sub generate {
     my ($class, $command) = @_;
 
-    DEBUG "Class is %s, Command is %s", $class, $command;
+    #DEBUG "Class is %s, Command is %s", $class, $command;
 
     return sub {
+        my ($client, @args) = @_;
         local *__ANON__ = "Memcached::Client::Request::${class}::new";
 
-        DEBUG "%s, %s", $command, \@_;
+        my $self = {command => $command, client => $client};
 
-        my $self = bless {}, $class;
-
-        $self->{command} = $command;
-
-        $self->{client} = shift;
-
-        DEBUG "Checking for condvar/callback";
-        if (ref $_[-1] eq 'AnyEvent::CondVar' or ref $_[-1] eq 'CODE') {
-            DEBUG "Found condvar/callback";
-            $self->{cb} = pop;
+        #DEBUG "Checking for condvar/callback";
+        if (ref $args[-1] eq 'AnyEvent::CondVar' or ref $args[-1] eq 'CODE') {
+            #DEBUG "Found condvar/callback";
+            $self->{cb} = pop @args;
         } else {
-            DEBUG "Making own condvar";
+            #DEBUG "Making own condvar";
             $self->{cb} = AE::cv;
             $self->{wait} = 1;
         }
 
-        DEBUG "Processing arguments: %s", \@_;
-        if ($self->init (@_)) {
-            DEBUG "Arguments valid, submitting";
+        bless $self, $class;
+
+        #DEBUG "Processing arguments: %s", \@args;
+        if ($self->init (@args)) {
+            #DEBUG "Arguments valid, submitting";
             $self->submit;
         } else {
-            DEBUG "Arguments invalid, completing";
+            #DEBUG "Arguments invalid, completing";
             $self->complete;
         }
 
@@ -98,13 +95,13 @@ there is one.
 
 sub complete {
     my ($self) = @_;
-    my $result;
     if (exists $self->{result}) {
-        $result = $self->{result};
+        $self->{cb}->($self->{result})
     } elsif (exists $self->{default}) {
-        $result = $self->{default};
+        $self->{cb}->($self->{default})
+    } else {
+        $self->{cb}->();
     }
-    $self->{cb}->($result);
 }
 
 =method init
@@ -137,18 +134,18 @@ request when all individual responses have been returned.
 
 sub multicall {
     my ($self, $rawkey, @args) = @_;
-    my $key = (ref $rawkey ? $rawkey->[1] : $rawkey);
+    my $key = ref $rawkey ? $rawkey->[1] : $rawkey;
     DEBUG "Noting that we are waiting on %s", $key;
     $self->{partial}->{$key} = 1;
     my $command = $self->{command};
-    $self->{client}->$command  ($rawkey, @args, sub {
-                           my ($value) = @_;
-                           local *__ANON__ = "Memcached::Client::Request::multicall::callback";
-                           DEBUG "Noting that we received %s for %s", $value, $key;
-                           $self->{result}->{$key} = $value if (defined $value);
-                           delete $self->{partial}->{$key};
-                           $self->complete unless keys %{$self->{partial}};
-                       });
+    $self->{client}->$command ($rawkey, @args, sub {
+                                   my ($value) = @_;
+                                   local *__ANON__ = "Memcached::Client::Request::multicall::callback";
+                                   DEBUG "Noting that we received %s for %s", $value, $key;
+                                   $self->{result}->{$key} = $value if (defined $value);
+                                   delete $self->{partial}->{$key};
+                                   $self->complete unless keys %{$self->{partial}};
+                               });
 }
 
 =method result
