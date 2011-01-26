@@ -417,10 +417,6 @@ determine the lifetime of the object on the server.
 If the add succeeds, 1 will be returned, if it fails, 0 will be
 returned.
 
-=cut
-
-*add = \&Memcached::Client::Request::add;
-
 =method add_multi
 
 [$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
@@ -433,10 +429,6 @@ determine the lifetime of the object on the server.
 Returns a hashref of [key, boolean] tuples, where 1 means the add
 succeeded, 0 means it failed.
 
-=cut
-
-*add_multi = \&Memcached::Client::Request::add_multi;
-
 =method append
 
 [$rc = ] append ($key, $value[, $cb-E<gt>($rc) || $cv])
@@ -446,10 +438,6 @@ specified content appended to it.
 
 If the append succeeds, 1 will be returned, if it fails, 0 will be
 returned.
-
-=cut
-
-*append = \&Memcached::Client::Request::append;
 
 =method append_multi
 
@@ -462,10 +450,6 @@ will determine the lifetime of the object on the server.
 
 Returns a hashref of [key, boolean] tuples, where 1 means the add
 succeeded, 0 means it failed.
-
-=cut
-
-*append_multi = \&Memcached::Client::Request::append_multi;
 
 =method decr
 
@@ -481,10 +465,6 @@ supplied, the key will be set to that value.
 If the decr succeeds, the resulting value will be returned, otherwise
 undef will be the result.
 
-=cut
-
-*decr = \&Memcached::Client::Request::decr;
-
 =method decr_multi
 
 [$value = ] decr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
@@ -499,10 +479,6 @@ supplied, the key will be set to that value.
 If the decr succeeds, the resulting value will be returned, otherwise
 undef will be the result.
 
-=cut
-
-*decr_multi = \&Memcached::Client::Request::decr_multi;
-
 =method delete
 
 [$rc = ] delete ($key, [$cb-E<gt>($rc) || $cv])
@@ -511,10 +487,6 @@ If the specified key exists in the cache, it will be deleted.
 
 If the delete succeeds, 1 will be returned, otherwise 0 will be the
 result.
-
-=cut
-
-*delete = \&Memcached::Client::Request::delete;
 
 =method delete_multi
 
@@ -526,10 +498,6 @@ will be deleted.
 If the delete succeeds, 1 will be returned, otherwise 0 will be the
 result.
 
-=cut
-
-*delete_multi = \&Memcached::Client::Request::delete_multi;
-
 =method flush_all
 
 [\%servers = ] flush_all ([$cb-E<gt>(\%servers) || $cv])
@@ -538,19 +506,11 @@ Clears the keys on each memcached server.
 
 Returns a hashref indicating which servers the flush succeeded on.
 
-=cut
-
-*flush_all = \&Memcached::Client::Request::flush_all;
-
 =method get
 
 [$value = ] get ($key, [$cb-E<gt>($value) || $cv])
 
 Retrieves the specified key from the cache, otherwise returning undef.
-
-=cut
-
-*get = \&Memcached::Client::Request::get;
 
 =method get_multi
 
@@ -558,10 +518,6 @@ Retrieves the specified key from the cache, otherwise returning undef.
 
 Retrieves the specified keys from the cache, returning a hashref of
 key => value pairs.
-
-=cut
-
-*get_multi = \&Memcached::Client::Request::get_multi;
 
 =method incr
 
@@ -577,10 +533,6 @@ supplied, the key will be set to that value.
 If the incr succeeds, the resulting value will be returned, otherwise
 undef will be the result.
 
-=cut
-
-*incr = \&Memcached::Client::Request::incr;
-
 =method incr_multi
 
 [$value = ] incr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
@@ -595,10 +547,6 @@ supplied, the key will be set to that value.
 If the incr succeeds, the resulting value will be returned, otherwise
 undef will be the result.
 
-=cut
-
-*incr_multi = \&Memcached::Client::Request::incr_multi;
-
 =method prepend($key, $value, $cb->($rc));
 
 [$rc = ] append ($key, $value[, $cb-E<gt>($rc) || $cv])
@@ -608,10 +556,6 @@ specified content prepended to it.
 
 If the prepend succeeds, 1 will be returned, if it fails, 0 will be
 returned.
-
-=cut
-
-*prepend = \&Memcached::Client::Request::prepend;
 
 =method prepend_multi
 
@@ -625,17 +569,9 @@ will determine the lifetime of the object on the server.
 Returns a hashref of [key, boolean] tuples, where 1 means the add
 succeeded, 0 means it failed.
 
-=cut
-
-*prepend_multi = \&Memcached::Client::Request::prepend_multi;
-
 =method remove
 
 Alias to delete
-
-=cut
-
-*remove = \&Memcached::Client::Request::delete;
 
 =method replace
 
@@ -649,10 +585,6 @@ of the object on the server.
 If the replace succeeds, 1 will be returned, if it fails, 0 will be
 returned.
 
-=cut
-
-*replace = \&Memcached::Client::Request::replace;
-
 =method replace_multi
 
 [$rc = ] replace_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
@@ -665,10 +597,6 @@ determine the lifetime of the object on the server.
 Returns a hashref of [key, boolean] tuples, where 1 means the replace
 succeeded, 0 means it failed.
 
-=cut
-
-*replace_multi = \&Memcached::Client::Request::replace_multi;
-
 =method set()
 
 [$rc = ] set ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
@@ -678,10 +606,6 @@ included, it will determine the lifetime of the object on the server.
 
 If the set succeeds, 1 will be returned, if it fails, 0 will be
 returned.
-
-=cut
-
-*set = \&Memcached::Client::Request::set;
 
 =method set_multi
 
@@ -694,10 +618,6 @@ included, it will determine the lifetime of the object on the server.
 Returns a hashref of [key, boolean] tuples, where 1 means the set
 succeeded, 0 means it failed.
 
-=cut
-
-*set_multi = \&Memcached::Client::Request::set_multi;
-
 =method stats ()
 
 [\%stats = ] stats ([$name, $cb-E<gt>(\%stats) || $cv])
@@ -705,10 +625,6 @@ succeeded, 0 means it failed.
 Retrieves stats from all memcached servers.
 
 Returns a hashref of hashrefs with the named stats.
-
-=cut
-
-*stats = \&Memcached::Client::Request::stats;
 
 =method version()
 
@@ -719,8 +635,6 @@ Retrieves the version number from all memcached servers.
 Returns a hashref of server => version pairs.
 
 =cut
-
-*version = \&Memcached::Client::Request::version;
 
 # We use this routine to select our server---it uses the selector to
 # hash the key (assuming we are given a valid key, which it checks)
