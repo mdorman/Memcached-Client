@@ -320,36 +320,32 @@ this.
 sub connect {
     my ($self, @args) = @_;
 
-    DEBUG "Starting connection";
+    my ($cv, $wait);
 
-    my ($callback, $cmd_cv);
     if (ref $args[-1] eq 'AnyEvent::CondVar') {
-        $cmd_cv = pop @args;
-        DEBUG "Found condvar";
-        cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
-    } elsif (ref $args[-1] eq 'CODE') {
-        $callback = pop @args;
-        DEBUG "Found callback";
-        cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
+        $cv = pop @args;
+    } else {
+        $cv = AE::cv;
+        if (ref $args[-1] eq 'CODE') {
+            my $cb = pop @args;
+            $cv->cb (sub {$cb->($_[0]->recv)});
+        } else {
+            $wait = 1;
+        }
     }
 
-    $cmd_cv ||= AE::cv;
-    $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
-
-    $cmd_cv->begin (sub {$_[0]->send (1)});
+    $cv->begin (sub {$_[0]->send (1)});
     for my $server (keys %{$self->{servers}}) {
         DEBUG "Connecting %s", $server;
-        $cmd_cv->begin;
+        $cv->begin;
         $self->{servers}->{$server}->connect (sub {
                                                   local *__ANON__ = "Memcached::Client::connect::callback";
                                                   DEBUG "%s connected", $server;
-                                                  $cmd_cv->end
+                                                  $cv->end
                                               });
     }
-    $cmd_cv->end;
-
-    DEBUG "%s", $callback ? "using callback" : "using condvar";
-    $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[-1]));
+    $cv->end;
+    $cv->recv if ($wait);
 }
 
 =method disconnect()
