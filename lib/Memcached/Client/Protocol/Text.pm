@@ -8,6 +8,7 @@ use base qw{Memcached::Client::Protocol};
 
 sub __cmd {
     my $command = join (' ', grep {defined} @_);
+    DEBUG $command;
     return "$command\r\n";
 }
 
@@ -86,19 +87,19 @@ sub __get {
                                  my @bits = split /\s+/, $line;
                                  if ($bits[0] eq "VALUE") {
                                      my ($key, $flags, $size, $cas) = @bits[1..4];
-                                     $c->{handle}->unshift_read (chunk => $size, sub {
-                                                                     my ($handle, $data) = @_;
-                                                                     # Catch the \r\n trailing the value...
-                                                                     $handle->unshift_read (line => sub {
-                                                                                                my ($handle, $line) = @_;
-                                                                                                $handle->unshift_read (line => sub {
-                                                                                                                           my ($handle, $line) = @_;
-                                                                                                                           warn ("Unexpected result $line from $command") unless ($line eq 'END');
-                                                                                                                           $r->result ($data, $flags, $cas);
-                                                                                                                           $c->complete;
-                                                                                                                       });
-                                                                                            });
-                                                                 });
+                                     $handle->unshift_read (chunk => $size, sub {
+                                                                my ($handle, $data) = @_;
+                                                                # Catch the \r\n trailing the value...
+                                                                $handle->unshift_read (line => sub {
+                                                                                           my ($handle, $line) = @_;
+                                                                                           $handle->unshift_read (line => sub {
+                                                                                                                      my ($handle, $line) = @_;
+                                                                                                                      warn ("Unexpected result $line from $command") unless ($line eq 'END');
+                                                                                                                      $r->result ($data, $flags, $cas);
+                                                                                                                      $c->complete;
+                                                                                                                  });
+                                                                                       });
+                                                            });
                                  } elsif ($bits[0] eq "END") {
                                      $r->result;
                                      $c->complete;
