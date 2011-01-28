@@ -49,12 +49,7 @@ sub new {
     my ($class, $server, $preparation) = @_;
     die "You must give me a server to connect to.\n" unless ($server);
     $server .= ":11211" unless index $server, ':' > 0;
-    my $self = bless {attempts => 0,
-                      last => 0,
-                      prepare => $preparation,
-                      requests => 0,
-                      queue => [],
-                      server => $server}, $class;
+    my $self = bless {prepare => $preparation, queue => [], server => $server}, $class;
     return $self;
 }
 
@@ -80,43 +75,48 @@ sub connect {
         $callback->();
     } else {
         DEBUG "Initiating connection to %s", $self->{server};
+        $self->{callback} = $callback;
+        my $attempts = 0;
         $self->{handle} = AnyEvent::Handle->new (connect => [split /:/, $self->{server}],
                                                  keepalive => 1,
                                                  on_connect => sub {
-                                                     ##local *__ANON__ = "Memcached::Client::Connection::on_connect";
-                                                     DEBUG "connected";
-                                                     @{$self}{qw{attempts last requests}} = (0, 0, 0);
-                                                     $callback->() if ($callback);
+                                                     DEBUG "Connected with %s", $self->{server};
+                                                     $self->callback;
                                                      $self->{executing}->run ($self) if ($self->{executing});
                                                  },
                                                  on_error => sub {
-                                                     ##local *__ANON__ = "Memcached::Client::Connection::on_error";
                                                      my ($handle, $fatal, $message) = @_;
-                                                     my $last = $self->{last} ? AE::time - $self->{last} : 0;
-                                                     my $pending = scalar @{$self->{queue}};
-                                                     # Need this here in case connection fails
+                                                     DEBUG "Removing handle for %s", $self->{server};
+                                                     delete $self->{handle};
                                                      if ($message eq "Broken pipe") {
-                                                         DEBUG "broken pipe";
-                                                         delete $self->{handle};
+                                                         DEBUG "Broken pipe, reconnecting to %s", $self->{server};
                                                          $self->connect;
-                                                     } elsif ($message eq "Connection timed out" and ++$self->{attempts} < 5) {
-                                                         DEBUG "reconnecting timeout";
-                                                         delete $self->{handle};
-                                                         $self->connect ($callback);
+                                                     } elsif ($message eq "Connection timed out" and ++$attempts < 5) {
+                                                         DEBUG "Connection timed out, retrying to %s", $self->{server};
+                                                         $self->connect;
                                                      } else {
-                                                         INFO "%s: %s, %d attempts, %d completed, %d pending, %f last", $self->{server}, $message, $self->{attempts}, $self->{requests}, $pending, $last;
-                                                         $callback->() if ($callback);
-                                                         delete $self->{handle};
+                                                         DEBUG "Error %s, failing %s", $message, $self->{server};
+                                                         $self->callback;
                                                          $self->fail;
                                                      }
                                                  },
                                                  on_prepare => sub {
-                                                     ##local *__ANON__ = "Memcached::Client::Connection::on_prepare";
                                                      my ($handle) = @_;
-                                                     DEBUG "preparing handle";
+                                                     DEBUG "Preparing handle for %s", $self->{server};
                                                      $self->{prepare}->($handle) if ($self->{prepare});
                                                      return $self->{connect_timeout} || 0.5;
                                                  });
+    }
+}
+
+=method callback
+
+=cut
+
+sub callback {
+    my ($self) = @_;
+    if (my $cb = delete $self->{callback}) {
+        $cb->();
     }
 }
 
@@ -154,7 +154,6 @@ sub enqueue {
     my ($self, $request) = @_;
     if ($self->{executing}) {
         DEBUG 'queueing request';
-        $self->{last} = AE::time;
         push @{$self->{queue}}, $request;
     } else {
         $self->{executing} = $request;
@@ -173,7 +172,6 @@ sub enqueue {
 
 sub complete {
     my ($self) = @_;
-    $self->{requests}++;
     DEBUG "Done with request";
     $self->{executing}->complete if ($self->{executing});
     if ($self->{executing} = shift @{$self->{queue}}) {
