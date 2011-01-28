@@ -465,4 +465,36 @@ sub run {
     $self->{command}->{client}->{protocol}->$command ($self, $connection);
 }
 
+package Memcached::Client::Request::Connect;
+# ABSTRACT: Class to manage Memcached::Client connection request
+
+use Memcached::Client::Log qw{DEBUG};
+use base qw{Memcached::Client::Request};
+
+=method C<submit>
+
+C<submit> accepts a command.  Assuming that there is a list of
+servers, it iterates over all the presently known servers, enqueuing
+the request
+
+=cut
+
+sub submit {
+    my ($self) = @_;
+    $self->{default} = 1;
+    return unless keys %{$self->{client}->{servers}};
+    for my $server (keys %{$self->{client}->{servers}}) {
+        $self->{partial}->{$server}++;
+        $self->{client}->{servers}->{$server}->connect (sub {
+                                                            local *__ANON__ = "Memcached::Client::connect::callback";
+                                                            DEBUG "%s connected", $server;
+                                                            delete $self->{partial}->{$server};
+                                                            $self->complete unless keys %{$self->{partial}};
+                                                        });
+    }
+    return 1;
+}
+
+*Memcached::Client::connect = Memcached::Client::Request::Connect->generate ("connect");
+
 1;

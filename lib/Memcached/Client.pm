@@ -314,39 +314,6 @@ invisible to the user, it is sometimes helpful to go ahead and start
 connections to all servers at once.  Calling C<connect()> will do
 this.
 
-=cut
-
-sub connect {
-    my ($self, @args) = @_;
-
-    my ($cv, $wait);
-
-    if (ref $args[-1] eq 'AnyEvent::CondVar') {
-        $cv = pop @args;
-    } else {
-        $cv = AE::cv;
-        if (ref $args[-1] eq 'CODE') {
-            my $cb = pop @args;
-            $cv->cb (sub {$cb->($_[0]->recv)});
-        } else {
-            $wait = 1;
-        }
-    }
-
-    $cv->begin (sub {$_[0]->send (1)});
-    for my $server (keys %{$self->{servers}}) {
-        DEBUG "Connecting %s", $server;
-        $cv->begin;
-        $self->{servers}->{$server}->connect (sub {
-                                                  local *__ANON__ = "Memcached::Client::connect::callback";
-                                                  DEBUG "%s connected", $server;
-                                                  $cv->end
-                                              });
-    }
-    $cv->end;
-    $cv->recv if ($wait);
-}
-
 =method disconnect()
 
 Immediately disconnect from all handles and shutdown everything.
