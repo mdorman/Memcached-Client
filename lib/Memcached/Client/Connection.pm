@@ -28,8 +28,7 @@ queued requests as a last resort.
 =method new
 
 C<new()> builds a new connection object.  The object is constructed
-and returned immediately.  No connection is initiated at construction
-time.
+and returned immediately.
 
 Takes two parameters: one is the server specification, in the form of
 "hostname" or "hostname:port".  If no port is specified, ":11211" (the
@@ -38,6 +37,11 @@ default memcached port) is appended to the server name.
 The other, optional, parameter is a subroutine reference that will be
 invoked on the raw filehandle before connection.  Generally only
 useful for putting the filehandle in binary mode.
+
+No connection is initiated at construction time, because that would
+require that we perhaps accept a callback to signal completion, etc.
+Simpler to lazily construct the connection when the conditions are
+already right for doing our asynchronous dance.
 
 =cut
 
@@ -58,7 +62,10 @@ sub new {
 
 C<connect()> initiates a connection to the specified server.
 
-If it succeeds, it will start dequeuing requests for the server to
+It takes an optional callback parameter that is used to signal when it
+has either completed the connection, or given up in despair.
+
+If it succeeds, it will start processing requests for the server to
 satisfy.
 
 If it fails, it will respond to all outstanding requests by invoking
