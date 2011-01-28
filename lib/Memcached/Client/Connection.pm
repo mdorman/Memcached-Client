@@ -111,6 +111,9 @@ sub connect {
 
 =method callback
 
+If we still have a reference to a callback, this will remove it (so it
+can't fire again) and then call it to signal completion.
+
 =cut
 
 sub callback {
@@ -122,19 +125,18 @@ sub callback {
 
 =method disconnect
 
+C<disconnect> will disconnect any extant handle from the server it is
+connected to, destroy it, and then fail all queued requests.
+
 =cut
 
 sub disconnect {
     my ($self) = @_;
 
-    DEBUG "disconnecting";
-    if (my $handle = $self->{handle}) {
-        DEBUG "got handle";
-        eval {
-            $handle->stop_read;
-            $handle->push_shutdown();
-            $handle->destroy();
-        };
+    DEBUG "Disconnecting from %s", $self->{server};
+    if (my $handle = delete $self->{handle}) {
+        DEBUG "Shutting down handle to %s", $self->{server};
+        $handle->destroy();
     }
 
     DEBUG "failing all requests";
