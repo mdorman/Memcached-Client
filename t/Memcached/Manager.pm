@@ -128,7 +128,7 @@ sub DESTROY {
 
 sub log {
     my ($self, $format, @args) = @_;
-    LOG ($format, @args);
+    LOG ("Manager> " . $format, @args);
 }
 
 1;
