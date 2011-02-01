@@ -3,7 +3,7 @@ package Memcached::Client::Serializer::JSON;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use JSON qw{decode_json encode_json};
 use base qw{Memcached::Client::Serializer};
 
@@ -17,7 +17,7 @@ sub deserialize {
     $flags ||= 0;
 
     if ($flags & F_JSON) {
-        DEBUG "Deserializing data";
+        $self->log ("Deserializing data") if DEBUG;
         $data = decode_json $data;
     }
 
@@ -32,12 +32,21 @@ sub serialize {
     my $flags = 0;
 
     if (ref $data) {
-        DEBUG "Serializing data";
+        $self->log ("Serializing data") if DEBUG;
         $data = encode_json $data;
         $flags |= F_JSON;
     }
 
     return ($command, $data, $flags);
+}
+
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ($format, @args);
 }
 
 1;

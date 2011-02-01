@@ -3,19 +3,18 @@ package Memcached::Client::Protocol::Text;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use base qw{Memcached::Client::Protocol};
 
 sub __cmd {
-    my $command = join (' ', grep {defined} @_);
-    DEBUG $command;
-    return "$command\r\n";
+    return join (' ', grep {defined} @_) . "\r\n";
 }
 
 sub __add {
     my ($self, $r, $c) = @_;
-    DEBUG "%s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{data};
+    #FIXME: @{$self}{qw{command data flags}} = $self->{client}->{compressor}->compress ($self->{client}->{serializer}->serialize ($self->{command}, $value));
     my $command = __cmd ($r->{command}, $r->{key}, $r->{flags}, $r->{expiration}, length $r->{data}) . __cmd ($r->{data});
+    $self->rlog ($r, $c, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -26,16 +25,16 @@ sub __add {
 
 sub __decr {
     my ($self, $r, $c) = @_;
-    DEBUG "%s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{delta};
     my $command = __cmd ($r->{command}, $r->{key}, $r->{delta});
+    $self->rlog ($r, $c, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
                                  if ($line eq 'NOT_FOUND') {
                                      if ($r->{data}) {
                                             $command = __cmd (add => $r->{key}, 0, 0, length $r->{data}) . __cmd ($r->{data});
-                                            $handle->push_write ($command);
-                                            $handle->push_read (line => sub {
+                                            $c->{handle}->push_write ($command);
+                                            $c->{handle}->push_read (line => sub {
                                                                     my ($handle, $line) = @_;
                                                                     $r->result ($line eq 'STORED' ? $r->{data} : undef);
                                                                     $c->complete;
@@ -53,8 +52,8 @@ sub __decr {
 
 sub __delete {
     my ($self, $r, $c) = @_;
-    DEBUG "delete: %s - %s", $c->{server}, $r->{key};
     my $command = __cmd (delete => $r->{key});
+    $self->rlog ($r, $c, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -65,8 +64,8 @@ sub __delete {
 
 sub __flush_all {
     my ($self, $r, $c) = @_;
-    DEBUG "flush_all: %s", $c->{server};
     my $command = $r->{delay} ? __cmd (flush_all => $r->{delay}) : __cmd ("flush_all");
+    $self->rlog ($r, $c, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -77,24 +76,24 @@ sub __flush_all {
 
 sub __get {
     my ($self, $r, $c) = @_;
-    DEBUG "get: %s - %s", $c->{server}, $r->{key};
     my $command = __cmd (get => $r->{key});
-    DEBUG "Command %s", $command;
+    $self->rlog ($r, $c, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
-                                 DEBUG "Got line %s", $line;
+                                 $self->log ("Got line %s", $line) if DEBUG;
                                  my @bits = split /\s+/, $line;
                                  if ($bits[0] eq "VALUE") {
                                      my ($key, $flags, $size, $cas) = @bits[1..4];
-                                     $handle->unshift_read (chunk => $size, sub {
+                                     $c->{handle}->unshift_read (chunk => $size, sub {
                                                                 my ($handle, $data) = @_;
                                                                 # Catch the \r\n trailing the value...
-                                                                $handle->unshift_read (line => sub {
+                                                                $c->{handle}->unshift_read (line => sub {
                                                                                            my ($handle, $line) = @_;
-                                                                                           $handle->unshift_read (line => sub {
+                                                                                           $c->{handle}->unshift_read (line => sub {
                                                                                                                       my ($handle, $line) = @_;
                                                                                                                       warn ("Unexpected result $line from $command") unless ($line eq 'END');
+                                     # FIXME: $self->{result} = $self->{client}->{serializer}->deserialize ($self->{client}->{compressor}->decompress ($data, $flags));
                                                                                                                       $r->result ($data, $flags, $cas);
                                                                                                                       $c->complete;
                                                                                                                   });
@@ -109,8 +108,8 @@ sub __get {
 
 sub __stats {
     my ($self, $r, $c) = @_;
-    DEBUG "P: stats: %s", $c->{server};
     my $command = $r->{command} ? __cmd (stats => $r->{command}) : __cmd ("stats");
+    $self->rlog ($r, $c, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     my ($code, $result);
     $code = sub {
@@ -131,8 +130,8 @@ sub __stats {
 
 sub __version {
     my ($self, $r, $c) = @_;
-    DEBUG "P: version: %s", $c->{server};
     my $command = __cmd ("version");
+    $self->rlog ($r, $c, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -144,6 +143,26 @@ sub __version {
                                  }
                                  $c->complete;
                              });
+}
+
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    #my $prefix = ref $self;
+    #$prefix =~ s,Memcached::Client::Request::,Request/,;
+    LOG ("Protocol> " . $format, @args);
+}
+
+=method rlog
+
+=cut
+
+sub rlog {
+    my ($self, $request, $connection, $command) = @_;
+    LOG ("Protocol/%s/%s> %s", $connection->{server}, join (" ", $request->{command}, $request->{key}), $command);
 }
 
 1;

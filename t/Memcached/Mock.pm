@@ -2,7 +2,7 @@ package t::Memcached::Mock;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use Module::Load;
 
 sub new {
@@ -15,7 +15,7 @@ sub new {
     $self->{selector}->set_servers ($args{servers});
     $self->{version} = $args{version};
     map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
-    DEBUG "Mock cluster is %s", $self;
+    $self->log ("Mock cluster is %s", $self) if DEBUG;
     $self;
 }
 
@@ -36,7 +36,7 @@ sub add {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    DEBUG "M: add: %s - %s - %s", $server, $index, $value;
+    $self->log ("M: add: %s - %s - %s", $server, $index, $value) if DEBUG;
     return 0 if (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} = $value;
     return 1;
@@ -59,7 +59,7 @@ sub append {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    DEBUG "M: append: %s - %s - %s", $server, $index, $value;
+    $self->log ("M: append: %s - %s - %s", $server, $index, $value) if DEBUG;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} .= $value;
     return 1;
@@ -87,7 +87,7 @@ sub decr {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    DEBUG "M: decr: %s - %s - %s", $server, $index, $delta;
+    $self->log ("M: decr: %s - %s - %s", $server, $index, $delta) if DEBUG;
     if (defined $self->{servers}->{$server}->{$index}) {
         if ($self->{servers}->{$server}->{$index} =~ m/^\d+$/) {
             $delta = $self->{servers}->{$server}->{$index} if ($delta > $self->{servers}->{$server}->{$index});
@@ -118,7 +118,7 @@ sub delete {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    DEBUG "M: delete: %s - %s", $server, $index;
+    $self->log ("M: delete: %s - %s", $server, $index) if DEBUG;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     delete $self->{servers}->{$server}->{$index};
     return 1;
@@ -137,7 +137,7 @@ sub delete_multi {
 sub flush_all {
     my ($self) = @_;
     map {
-        DEBUG "M: flush_all: %s", $_;
+        $self->log ("M: flush_all: %s", $_) if DEBUG;
         $self->{servers}->{$_} = {};
     } keys %{$self->{servers}};
     return {map {$_ => 1} keys %{$self->{servers}}};
@@ -149,7 +149,7 @@ sub get {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    DEBUG "M: get: %s - %s", $server, $index;
+    $self->log ("M: get: %s - %s", $server, $index) if DEBUG;
     if (length $index > 250) {
         return undef;
     } else {
@@ -166,7 +166,7 @@ sub get_multi {
         my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or next;
         my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
         next unless (defined $self->{servers}->{$server});
-        DEBUG "M: get: %s - %s", $server, $index;
+        $self->log ("M: get: %s - %s", $server, $index) if DEBUG;
         next unless (defined $self->{servers}->{$server}->{$index});
         $rv{ref $key ? $key->[1] : $key} = length $index > 250 ? undef : $self->{servers}->{$server}->{$index};
     }
@@ -180,7 +180,7 @@ sub incr {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    DEBUG "M: incr: %s - %s - %s", $server, $index, $delta;
+    $self->log ("M: incr: %s - %s - %s", $server, $index, $delta) if DEBUG;
     if (defined $self->{servers}->{$server}->{$index}) {
         if ($self->{servers}->{$server}->{$index} =~ m/^\d+$/) {
             $self->{servers}->{$server}->{$index} += $delta;
@@ -217,7 +217,7 @@ sub prepend {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    DEBUG "M: prepend: %s - %s - %s", $server, $index, $value;
+    $self->log ("M: prepend: %s - %s - %s", $server, $index, $value) if DEBUG;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} = $value . $self->{servers}->{$server}->{$index};
     return 1;
@@ -240,7 +240,7 @@ sub replace {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    DEBUG "M: replace: %s - %s - %s", $server, $index, $value;
+    $self->log ("M: replace: %s - %s - %s", $server, $index, $value) if DEBUG;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} = $value;
     return 1;
@@ -263,7 +263,7 @@ sub set {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    DEBUG "M: set: %s - %s - %s", $server, $index, $value;
+    $self->log ("M: set: %s - %s - %s", $server, $index, $value) if DEBUG;
     if (length $index > 250) {
         return 0;
     } else {
@@ -309,16 +309,26 @@ sub stop {
     my ($self, $server) = @_;
     delete $self->{servers}->{$server};
     # $self->{servers}->{$server} = undef;
-    DEBUG "Deleted %s, result %s", $server, $self;
+    $self->log ("Deleted %s, result %s", $server, $self) if DEBUG;
     return 1;
 }
 
 sub version {
     my ($self) = @_;
     return {map {
-        DEBUG "M: version: %s", $_;
+        $self->log ("M: version: %s", $_) if DEBUG;
         $_ => defined $self->{servers}->{$_} ? $self->{version} : undef
     } keys %{$self->{servers}}};
 }
+
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ($format, @args);
+}
+
 
 1;

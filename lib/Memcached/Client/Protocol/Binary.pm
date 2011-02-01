@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use AnyEvent::Handle qw{};
 use Config;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use bytes;
 
 use base qw{Memcached::Client::Protocol};
@@ -215,7 +215,8 @@ my %opcodes = (add => MEMD_ADD,
 
 sub __add {
     my ($self, $r, $c) = @_;
-    DEBUG "P: %s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{value};
+    $self->log ("P: %s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{value}) if DEBUG;
+    #FIXME: @{$self}{qw{command data flags}} = $self->{client}->{compressor}->compress ($self->{client}->{serializer}->serialize ($self->{command}, $value));
     $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{key}, pack ('N2', $r->{flags}, $r->{expiration}), $r->{data});
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
@@ -226,14 +227,14 @@ sub __add {
 
 sub __decr {
     my ($self, $r, $c) = @_;
-    DEBUG "P: %s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{delta};
+    $self->log ("P: %s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{delta}) if DEBUG;
     $r->{expire} = defined $r->{data} ? 0 : 0xffffffff;
     $r->{data} ||= 0;
     my $extras = HAS_64BIT ? pack('Q2L', $r->{delta}, $r->{data}, $r->{expire}) : pack('N5', 0, $r->{delta}, 0, $r->{data}, $r->{expire});
     $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{key}, $extras, undef, undef, undef, undef);
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
-                                 DEBUG "Our message: %s", $msg;
+                                 $self->log ("Our message: %s", $msg) if DEBUG;
                                  my $delta;
                                  if (HAS_64BIT) {
                                      $delta = unpack ('Q', $msg->{value});
@@ -247,7 +248,7 @@ sub __decr {
 
 sub __delete {
     my ($self, $r, $c) = @_;
-    DEBUG "P: delete: %s - %s", $c->{server}, $r->{key};
+    $self->log ("P: delete: %s - %s", $c->{server}, $r->{key}) if DEBUG;
     $c->{handle}->push_write (memcached_bin => MEMD_DELETE, $r->{key});
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
@@ -258,7 +259,7 @@ sub __delete {
 
 sub __flush_all {
     my ($self, $r, $c) = @_;
-    DEBUG "P: flush_all: %s", $c->{server};
+    $self->log ("P: flush_all: %s", $c->{server}) if DEBUG;
     $c->{handle}->push_write (memcached_bin => MEMD_FLUSH);
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
@@ -269,12 +270,13 @@ sub __flush_all {
 
 sub __get {
     my ($self, $r, $c) = @_;
-    DEBUG "P: get: %s - %s", $c->{server}, $r->{key};
+    $self->log ("P: get: %s - %s", $c->{server}, $r->{key}) if DEBUG;
     $c->{handle}->push_write (memcached_bin => MEMD_GETK, $r->{key});
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
                                  my ($flags, $exptime) = unpack('N2', $msg->{extra});
                                  if (0 == $msg->{status} and exists $msg->{key} && exists $msg->{value}) {
+                                     # FIXME: $self->{result} = $self->{client}->{serializer}->deserialize ($self->{client}->{compressor}->decompress ($data, $flags));
                                      $r->result ($msg->{value}, $flags, $msg->{cas});
                                  }
                                  $c->complete;
@@ -283,7 +285,7 @@ sub __get {
 
 sub __version {
     my ($self, $r, $c) = @_;
-    DEBUG "P: version: %s", $c->{server};
+    $self->log ("P: version: %s", $c->{server}) if DEBUG;
     $c->{handle}->push_write (memcached_bin => MEMD_VERSION);
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
@@ -293,6 +295,15 @@ sub __version {
                                  }
                                  $c->complete
                              });
+}
+
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ($format, @args);
 }
 
 1;

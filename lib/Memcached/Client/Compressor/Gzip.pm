@@ -4,7 +4,7 @@ package Memcached::Client::Compressor::Gzip;
 use bytes;
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use base qw{Memcached::Client::Compressor};
 
 use constant +{
@@ -21,7 +21,7 @@ sub decompress {
     $flags ||= 0;
 
     if ($flags & F_COMPRESS && HAVE_ZLIB) {
-        DEBUG "Uncompressing data";
+        $self->log ("Uncompressing data") if DEBUG;
         $data = Compress::Zlib::memGunzip ($data);
     }
 
@@ -31,26 +31,26 @@ sub decompress {
 sub compress {
     my ($self, $command, $data, $flags) = @_;
 
-    DEBUG "Entering compress";
+    $self->log ("Entering compress") if DEBUG;
     return unless defined $data;
 
-    DEBUG "Have data";
+    $self->log ("Have data") if DEBUG;
     my $len = bytes::length ($data);
 
-    DEBUG "Checking for Zlib";
+    $self->log ("Checking for Zlib") if DEBUG;
 
     if (HAVE_ZLIB) {
 
-        DEBUG "Checking for compressable (threshold $self->{compress_threshold}, command $command)";
+        $self->log ("Checking for compressable (threshold $self->{compress_threshold}, command $command)") if DEBUG;
         my $compressable = ($command ne 'append' && $command ne 'prepend') && $self->{compress_threshold} && $len >= $self->{compress_threshold};
 
         if ($compressable) {
-            DEBUG "Compressing data";
+            $self->log ("Compressing data") if DEBUG;
             my $c_val = Compress::Zlib::memGzip ($data);
             my $c_len = bytes::length ($c_val);
 
             if ($c_len < $len * (1 - COMPRESS_SAVINGS)) {
-                DEBUG "Compressing is a win";
+                $self->log ("Compressing is a win") if DEBUG;
                 $data = $c_val;
                 $flags |= F_COMPRESS;
             }
@@ -58,6 +58,15 @@ sub compress {
     }
 
     return ($command, $data, $flags);
+}
+
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ($format, @args);
 }
 
 1;

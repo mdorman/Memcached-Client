@@ -3,7 +3,7 @@ package Memcached::Client::Selector::Traditional;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use String::CRC32 qw{crc32};
 use base qw{Memcached::Client::Selector};
 
@@ -48,7 +48,7 @@ Jamie McCarthy <jamie@mccarthy.vg>
 
 sub set_servers {
     my ($self, $list) = @_;
-    DEBUG "list: %s", $list;
+    $self->log ("list: %s", $list) if DEBUG;
     if ($list) {
         my $count = scalar @{$list};
         if (1 < $count) {
@@ -63,7 +63,7 @@ sub set_servers {
                 }
             }
             $self->{bucketcount} = scalar @{$self->{buckets}};
-            DEBUG "bucket count: %d\nbucket list: %s", $self->{bucketcount}, $self->{buckets};
+            $self->log ("bucket count: %d\nbucket list: %s", $self->{bucketcount}, $self->{buckets}) if DEBUG;
         } elsif (1 == $count) {
             $self->{_single_sock} = ref $list->[0] ? $list->[0]->[0] : $list->[0];
         }
@@ -83,8 +83,17 @@ sub get_server {
     return unless $self->{buckets};
     $namespace ||= "";
     my $hash = ref $key ? int ($key->[0]) : crc32 ($namespace . $key) >> 16 & 0x7fff;
-    DEBUG "Hash is %d, bucket # %d, bucket %s", $hash, $hash % $self->{bucketcount}, $self->{buckets}->[$hash % $self->{bucketcount}];
+    $self->log ("Hash is %d, bucket # %d, bucket %s", $hash, $hash % $self->{bucketcount}, $self->{buckets}->[$hash % $self->{bucketcount}]) if DEBUG;
     return $self->{buckets}->[$hash % $self->{bucketcount}];
+}
+
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ($format, @args);
 }
 
 1;
