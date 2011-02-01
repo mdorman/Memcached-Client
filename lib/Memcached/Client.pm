@@ -607,13 +607,19 @@ Returns a hashref of server => version pairs.
 
 =cut
 
-=method __submit
-
-# We use this routine to select our server---it uses the selector to
-# hash the key (assuming we are given a valid key, which it checks)
-# and choose a machine.
-
-=cut
+# This is really where all the action happens---where actual requests
+# are submitted and handled.
+#
+# The routine iterates over the requests its given.  It serializes and
+# compresses any data in the request as necessary.  If the request has
+# a key, then it follows the keyed-submission process, preprocessing
+# the key as necessary, checking its validity, mapping it to a server,
+# adding a namespace, and finally submitting it.
+#
+# If the request has no key, it is assumed to be a broadcast request,
+# so we call the ->server method on the request for each of our
+# servers, to create the appropriate number of requests, and we queue
+# each of them.
 
 sub __submit {
     my ($self, @requests) = @_;
