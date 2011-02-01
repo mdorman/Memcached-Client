@@ -16,7 +16,7 @@ sub new {
         my $weight = int (rand (3) + 1);
         push @{$self->{servers}}, $weight > 1 ? [$host, $weight] : $host;
     }
-    $self->log ("servers: %s", $self->{servers}) if DEBUG;
+    $self->log ("%s", $self->{servers}) if DEBUG;
     $self;
 }
 
@@ -50,7 +50,7 @@ sub servers {
 
 sub log {
     my ($self, $format, @args) = @_;
-    LOG ($format, @args);
+    LOG ("Servers> " . $format, @args);
 }
 
 
