@@ -195,14 +195,14 @@ for my $runner (qw{sync async}) {
     for my $protocol qw(Text Binary) {
         for my $selector qw(Traditional) {
             note sprintf "running %s/%s %s", $selector, $protocol, $runner;
-            LOG ("running %s/%s %s", $selector, $protocol, $runner) if DEBUG;
+            trace ("running %s/%s %s", $selector, $protocol, $runner) if DEBUG;
             my $namespace = join ('.', time, $$, '');
             # my $namespace = "llamas.";
             isa_ok (my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers->servers), 'Memcached::Client', "Get memcached client");
             isa_ok (my $mock = t::Memcached::Mock->new (namespace => $namespace, selector => $selector, servers => $servers->servers, version => $manager->version), 't::Memcached::Mock', "Get mock memcached client");
             my $candidate = $servers->error;
             &$runner ($selector, $protocol, $candidate, $client, $mock, freeze \@tests);
-            LOG ("Done with %s/%s %s", $selector, $protocol, $runner) if DEBUG;
+            trace ("Done with %s/%s %s", $selector, $protocol, $runner) if DEBUG;
             $manager->start ($candidate);
             $mock->start ($candidate);
         }
@@ -211,7 +211,7 @@ for my $runner (qw{sync async}) {
 
 sub async {
     my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
-    LOG ("T: running %s/%s async", $selector, $protocol) if DEBUG;
+    trace ("running %s/%s async", $selector, $protocol) if DEBUG;
     my @tests = @{thaw $tests};
     my $failure = int rand (scalar @tests - 20) + 10;
     note "Failing test $failure";
@@ -219,16 +219,19 @@ sub async {
     my $test; $test = sub {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
-        LOG ("T: %s is %s (%s)", $msg, $method, \@args) if DEBUG;
+        trace ("%s is %s (%s)", $msg, $method, \@args) if DEBUG;
                 $client->$method (@{dclone \@args}, sub {
                               my ($received) = @_;
                               my $expected = $mock->$method (@args);
                               my $succeed = is_deeply ($received, $expected, $msg);
-                              LOG (("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT) unless $succeed;
+                              unless ($succeed) {
+                                  trace ("%s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock);
+                                  BAIL_OUT;
+                              }
                               if (scalar @tests) {
                                   if (0 == --$failure) {
                                       note "Failing $candidate";
-                                      LOG ("Failing $candidate") if DEBUG;
+                                      trace ("Failing $candidate") if DEBUG;
                                       $manager->stop ($candidate);
                                       $mock->stop ($candidate);
                                   }
@@ -244,22 +247,25 @@ sub async {
 
 sub sync {
     my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
-    LOG ("T: running %s/%s synchronous", $selector, $protocol) if DEBUG;
+    trace ("running %s/%s synchronous", $selector, $protocol) if DEBUG;
     my @tests = @{thaw $tests};
     my $failure = int rand (scalar @tests - 20) + 10;
     note "Failing test $failure";
     while (1) {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
-        LOG ("T: %s is %s (%s)", $msg, $method, \@args) if DEBUG;
+        trace ("%s is %s (%s)", $msg, $method, \@args) if DEBUG;
         my $expected = $mock->$method (@args);
         my $received = $client->$method (@args);
         my $succeeded = is_deeply ($received, $expected, $msg);
-        LOG (("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT) unless $succeeded;
+        unless ($succeeded) {
+            trace ("%s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock);
+            BAIL_OUT;
+        }
         if (@tests) {
             if (0 == --$failure) {
                 note "Failing $candidate";
-                LOG ("Failing $candidate") if DEBUG;
+                trace ("Failing $candidate") if DEBUG;
                 $mock->stop ($candidate);
                 $manager->stop ($candidate);
             }
@@ -286,13 +292,13 @@ sub find_memcached {
     return;
 }
 
-=method log
+=method trace
 
 =cut
 
-sub log {
-    my ($self, $format, @args) = @_;
-    LOG ($format, @args);
+sub trace {
+    my ($format, @args) = @_;
+    LOG ("Test> " . $format, @args);
 }
 
 1;
