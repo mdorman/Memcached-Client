@@ -188,7 +188,7 @@ when all outstanding requests are in and return the aggregate result.
 =cut
 
 sub process {
-    my ($self, $requests) = @_;
+    my ($self, @requests) = @_;
     $self->{default} = {};
     $self->{partial} = 0;
     return grep {$_} map {
@@ -206,7 +206,7 @@ sub process {
             $self->log ("%d queries outstanding", $self->{partial}) if DEBUG;
             $request;
         }
-    } @{$requests};
+    } @requests;
 }
 
 *Memcached::Client::add_multi = Memcached::Client::Request::AddMulti->generate ("add");
@@ -260,7 +260,7 @@ when all outstanding requests are in and return the aggregate result.
 =cut
 
 sub process {
-    my ($self, $requests) = @_;
+    my ($self, @requests) = @_;
     $self->{default} = {};
     $self->{partial} = 0;
     return grep {defined} map {
@@ -273,12 +273,12 @@ sub process {
             $self->result unless (--$self->{partial});
             $self->log ("%d queries outstanding", $self->{partial}) if DEBUG;
         };
-        if ($request->process (@{$_})) {
+        if ($request->process (ref $_ ? @{$_} : $_)) {
             $self->{partial}++;
             $self->log ("%d queries outstanding", $self->{partial}) if DEBUG;
             $request;
         }
-    } @{$requests};
+    } @requests;
 }
 
 *Memcached::Client::decr_multi = Memcached::Client::Request::DecrMulti->generate ("decr");
