@@ -24,9 +24,9 @@ the structure of any references that are made.
 If the variable MCDEBUG is false, the debugging code should be
 compiled out entirely.
 
-=method INFO
+=method LOG
 
-INFO() will warn the user with the specified message, formatted with
+LOG() will inform the user with the specified message, formatted with
 sprintf and dumping the structure of any references that are made.
 
 =cut
