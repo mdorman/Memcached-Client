@@ -204,6 +204,8 @@ sub new {
 
 =method log
 
+Log with an appropriate prefix.
+
 =cut
 
 sub log {
