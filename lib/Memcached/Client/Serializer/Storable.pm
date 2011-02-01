@@ -25,7 +25,7 @@ sub deserialize {
 }
 
 sub serialize {
-    my ($self, $command, $data) = @_;
+    my ($self, $data) = @_;
 
     return unless defined $data;
 
@@ -37,7 +37,7 @@ sub serialize {
         $flags |= F_STORABLE;
     }
 
-    return ($command, $data, $flags);
+    return ($data, $flags);
 }
 
 =method log
