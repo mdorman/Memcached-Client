@@ -223,7 +223,8 @@ sub __connect {
 sub __add {
     my ($self, $c, $r) = @_;
     $self->rlog ($c, $r, $r->{command}) if DEBUG;
-    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{nskey}, pack ('N2', $r->{flags}, $r->{expiration}), $r->{data});
+    my ($data, $flags) = $self->encode ($r->{command}, $r->{value});
+    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{nskey}, pack ('N2', $flags, $r->{expiration}), $data);
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
                                  $r->result (0 == $msg->{status} ? 1 : 0);
@@ -283,8 +284,7 @@ sub __get {
                                  $self->log ("Our message: %s", $msg) if DEBUG;
                                  my ($flags, $exptime) = unpack('N2', $msg->{extra});
                                  if (0 == $msg->{status} and exists $msg->{key} && exists $msg->{value}) {
-                                     # FIXME: $self->{result} = $self->{client}->{serializer}->deserialize ($self->{client}->{compressor}->decompress ($data, $flags));
-                                     $r->result ($msg->{value}, $flags, $msg->{cas});
+                                     $r->result ($self->decode ($msg->{value}, $flags));
                                  } else {
                                      $r->result;
                                  }

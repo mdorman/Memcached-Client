@@ -189,7 +189,7 @@ sub new {
     $self->{compressor} = $self->__class_loader (Compressor => $args{compressor} || 'Gzip')->new;
     $self->{selector} = $self->__class_loader (Selector => $args{selector} || 'Traditional')->new;
     $self->{serializer} = $self->__class_loader (Serializer => $args{serializer} || 'Storable')->new;
-    $self->{protocol} = $self->__class_loader (Protocol => $args{protocol} || 'Text')->new;
+    $self->{protocol} = $self->__class_loader (Protocol => $args{protocol} || 'Text')->new (compressor => $self->{compressor}, serializer => $self->{serializer});
 
     $self->compress_threshold ($args{compress_threshold} || 10000);
     $self->hash_namespace ($args{hash_namespace} || 1);
@@ -628,10 +628,6 @@ sub __submit {
     $self->log ("Submitting request(s)") if DEBUG;
     for my $request (@requests) {
         $self->log ("Request is %s", $request) if DEBUG;
-        if (defined $request->{value}) {
-            $self->log ("Encoding request data") if DEBUG;
-            @{$request}{qw{command data flags}} = $self->{compressor}->compress ($self->{serializer}->serialize ($request->{command}, $request->{value})) ;
-        }
         if (defined $request->{key}) {
             if ($self->{preprocessor}) {
                 if (ref $request->{key}) {

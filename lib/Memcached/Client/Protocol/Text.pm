@@ -19,7 +19,8 @@ sub __connect {
 
 sub __add {
     my ($self, $c, $r) = @_;
-    my $command = __cmd ($r->{command}, $r->{nskey}, $r->{flags}, $r->{expiration}, length $r->{data}) . __cmd ($r->{data});
+    my ($data, $flags) = $self->encode ($r->{command}, $r->{value});
+    my $command = __cmd ($r->{command}, $r->{nskey}, $flags, $r->{expiration}, length $data) . __cmd ($data);
     $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
@@ -99,8 +100,7 @@ sub __get {
                                                                                            $c->{handle}->unshift_read (line => sub {
                                                                                                                       my ($handle, $line) = @_;
                                                                                                                       warn ("Unexpected result $line from $command") unless ($line eq 'END');
-                                     # FIXME: $self->{result} = $self->{client}->{serializer}->deserialize ($self->{client}->{compressor}->decompress ($data, $flags));
-                                                                                                                      $r->result ($data, $flags, $cas);
+                                                                                                                      $r->result ($self->decode ($data, $flags));
                                                                                                                       $c->complete;
                                                                                                                   });
                                                                                        });

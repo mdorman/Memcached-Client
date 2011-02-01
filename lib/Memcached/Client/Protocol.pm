@@ -3,7 +3,7 @@ package Memcached::Client::Protocol;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{LOG};
+use Memcached::Client::Log qw{DEBUG LOG};
 
 =head1 SYNOPSIS
 
@@ -19,9 +19,34 @@ C<new()> creates the protocol object.
 
 sub new {
     my $class = shift;
-    my $self = bless {}, $class;
+    my $self = bless {@_}, $class;
     return $self;
 }
+
+=method C<decode>
+
+=cut
+
+sub decode {
+    my ($self, $data, $flags) = @_;
+    return $self->{serializer}->deserialize ($self->{compressor}->decompress ($data, $flags));
+}
+
+=method C<encode>
+
+=cut
+
+sub encode {
+    my ($self, $command, $value) = @_;
+    if ($command ne 'append' && $command ne 'prepend') {
+        $self->log ("Encoding request data") if DEBUG;
+        return $self->{compressor}->compress ($self->{serializer}->serialize ($value));
+    } else {
+        $self->log ("Nothing to do") if DEBUG;
+        return $value, 0;
+    }
+}
+
 
 =method C<log>
 
