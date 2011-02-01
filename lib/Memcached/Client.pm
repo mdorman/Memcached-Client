@@ -631,7 +631,7 @@ sub __submit {
         if (defined $request->{key}) {
             if ($self->{preprocessor}) {
                 if (ref $request->{key}) {
-                    $request->{key}->[1] = $self->{preprocessor}->{$request->{key}->[1]};
+                    $request->{key}->[1] = $self->{preprocessor}->($request->{key}->[1]);
                 } else {
                     $request->{key} = $self->{preprocessor}->($request->{key});
                 }
