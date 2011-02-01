@@ -196,7 +196,7 @@ sub fail {
         $self->log ("Failing executing request %s", $executing) if DEBUG;
         $executing->result;
     }
-    $self->log ("Failing requests in queue: %s", @{$self->{queue}}) if DEBUG;
+    $self->log ("Failing requests in queue: %s", $self->{queue}) if DEBUG;
     while (my $request = shift @{$self->{queue}}) {
         $self->log ("Failing request %s", $request) if DEBUG;
         $request->result;
