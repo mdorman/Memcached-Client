@@ -29,7 +29,7 @@ sub decompress {
 }
 
 sub compress {
-    my ($self, $command, $data, $flags) = @_;
+    my ($self, $data, $flags) = @_;
 
     $self->log ("Entering compress") if DEBUG;
     return unless defined $data;
@@ -41,8 +41,7 @@ sub compress {
 
     if (HAVE_ZLIB) {
 
-        $self->log ("Checking for compressable (threshold $self->{compress_threshold}, command $command)") if DEBUG;
-        my $compressable = ($command ne 'append' && $command ne 'prepend') && $self->{compress_threshold} && $len >= $self->{compress_threshold};
+        my $compressable = $self->{compress_threshold} && $len >= $self->{compress_threshold};
 
         if ($compressable) {
             $self->log ("Compressing data") if DEBUG;
@@ -57,7 +56,7 @@ sub compress {
         }
     }
 
-    return ($command, $data, $flags);
+    return ($data, $flags);
 }
 
 1;
