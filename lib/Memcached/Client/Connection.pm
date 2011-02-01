@@ -179,7 +179,7 @@ sub complete {
     my ($self) = @_;
     $self->log ("Done with request") if DEBUG;
     delete $self->{executing};
-    $self->dequeue;
+    goto &dequeue;
 }
 
 =method fail
