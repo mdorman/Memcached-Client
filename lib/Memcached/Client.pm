@@ -6,7 +6,7 @@ use warnings;
 use AnyEvent qw{};
 use AnyEvent::Handle qw{};
 use Memcached::Client::Connection qw{};
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use Memcached::Client::Request qw{};
 use Module::Load qw{load};
 
@@ -181,15 +181,15 @@ sub new {
     my ($class, @args) = @_;
     my %args = 1 == scalar @args ? %{$args[0]} : @args;
 
-    DEBUG "args: %s", \%args;
-
     my $self = bless {}, $class;
 
+    $self->log ("new: %s", \%args) if DEBUG;
+
     # Get all of our objects instantiated
-    $self->{compressor} = __class_loader (Compressor => $args{compressor} || 'Gzip')->new;
-    $self->{serializer} = __class_loader (Serializer => $args{serializer} || 'Storable')->new;
-    $self->{selector} = __class_loader (Selector => $args{selector} || 'Traditional')->new;
-    $self->{protocol} = __class_loader (Protocol => $args{protocol} || 'Text')->new;
+    $self->{compressor} = $self->__class_loader (Compressor => $args{compressor} || 'Gzip')->new;
+    $self->{selector} = $self->__class_loader (Selector => $args{selector} || 'Traditional')->new;
+    $self->{serializer} = $self->__class_loader (Serializer => $args{serializer} || 'Storable')->new;
+    $self->{protocol} = $self->__class_loader (Protocol => $args{protocol} || 'Text')->new;
 
     $self->compress_threshold ($args{compress_threshold} || 10000);
     $self->hash_namespace ($args{hash_namespace} || 1);
@@ -197,19 +197,28 @@ sub new {
     $self->set_servers ($args{servers});
     $self->set_preprocessor ($args{preprocessor});
 
-    DEBUG "Done creating object";
+    $self->log ("new: done") if DEBUG;
 
     $self;
 }
 
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ("Client> " . $format, @args);
+}
+
 # This manages class loading for the sub-classes
 sub __class_loader {
-    my ($prefix, $class) = @_;
+    my ($self, $prefix, $class) = @_;
     # Add our prefixes if the class name isn't called out as absolute
     $class = join ('::', 'Memcached::Client', $prefix, $class) if ($class !~ s/^\+//);
     # Sanitize our class name
     $class =~ s/[^\w:_]//g;
-    DEBUG "Loading %s", $class;
+    $self->log ("loading %s", $class) if DEBUG;
     load $class;
     $class;
 }
@@ -223,7 +232,7 @@ the new value if it's handed one.
 
 sub compress_threshold {
     my ($self, $new) = @_;
-    DEBUG "Compress threshold %d", $new;
+    $self->log ("compress threshold: %d", $new) if DEBUG;
     $self->{compressor}->compress_threshold ($new);
 }
 
@@ -237,7 +246,7 @@ value if it's handed one.
 sub namespace {
     my ($self, $new) = @_;
     my $ret = $self->{namespace};
-    DEBUG "Namespace %s", $new;
+    $self->log ("namespace: %s", $new) if DEBUG;
     $self->{namespace} = $new if (defined $new);
     return $ret;
 }
@@ -254,7 +263,7 @@ if it's handed one.
 sub hash_namespace {
     my ($self, $new) = @_;
     my $ret = $self->{hash_namespace};
-    DEBUG "Hash namespace %s", $new;
+    $self->log ("hash namespace: %s", $new) if DEBUG;
     $self->{hash_namespace} = !!$new if (defined $new);
     return $ret;
 }
@@ -291,15 +300,15 @@ sub set_servers {
     my $list = {map {(ref $_ ? $_->[0] : $_), {}} @{$servers}};
     for my $server (keys %{$self->{servers} || {}}) {
         next if (delete $list->{$server});
-        DEBUG "Disconnecting %s", $server;
+        $self->log ("disconnecting %s", $server) if DEBUG;
         my $connection = delete $self->{servers}->{$server};
         $connection->disconnect;
     }
 
     # Spawn connection handlers for all the others
     for my $server (sort keys %{$list}) {
-        DEBUG "Connecting to %s", $server;
-        $self->{servers}->{$server} ||= Memcached::Client::Connection->new ($server, $self->{protocol}->prepare_handle);
+        $self->log ("creating connection for %s", $server) if DEBUG;
+        $self->{servers}->{$server} ||= Memcached::Client::Connection->new ($server, $self->{protocol});
     }
 
     return 1;
@@ -327,10 +336,10 @@ important to call C<disconnect()> explicitly.
 sub disconnect {
     my ($self) = @_;
 
-    DEBUG "Disconnecting all servers";
+    $self->log ("disconnecting all") if DEBUG;
     for my $server (keys %{$self->{servers}}) {
         next unless defined $self->{servers}->{$server};
-        DEBUG "Disconnecting %s", $server;
+        $self->log ("disconnecting %s", $server) if DEBUG;
         $self->{servers}->{$server}->disconnect;
     }
 }
@@ -598,26 +607,58 @@ Returns a hashref of server => version pairs.
 
 =cut
 
+=method __submit
+
 # We use this routine to select our server---it uses the selector to
 # hash the key (assuming we are given a valid key, which it checks)
 # and choose a machine.
 
-sub __hash {
-    my ($self, $key) = @_;
-    $key = $self->{preprocessor}->($key) if ($self->{preprocessor});
-    return unless (defined $key and # We must have some sort of key
-                   (ref $key and # Pre-hashed
-                    $key->[0] =~ m/^\d+$/ and # Hash is a decimal #
-                    length $key->[1] > 0 and # Real key has a length
-                    length $key->[1] <= 250 and # Real key is shorter than 250 chars
-                    -1 == index $key, " " # Key contains no spaces
-                   ) ||
-                   (length $key > 0 and # Real key has a length
-                    length $key <= 250 and # Real key is shorter than 250 chars
-                    -1 == index $key, " " # Key contains no spaces
-                   )
-                  );
-    return ($self->{namespace} . (ref $key ? $key->[1] : $key), $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : ""));
+=cut
+
+sub __submit {
+    my ($self, @requests) = @_;
+    $self->log ("Submitting request(s)") if DEBUG;
+    for my $request (@requests) {
+        $self->log ("Request is %s", $request) if DEBUG;
+        if (defined $request->{value}) {
+            $self->log ("Encoding request data") if DEBUG;
+            @{$request}{qw{command data flags}} = $self->{compressor}->compress ($self->{serializer}->serialize ($request->{command}, $request->{value})) ;
+        }
+        if (defined $request->{key}) {
+            if ($self->{preprocessor}) {
+                if (ref $request->{key}) {
+                    $request->{key}->[1] = $self->{preprocessor}->{$request->{key}->[1]};
+                } else {
+                    $request->{key} = $self->{preprocessor}->($request->{key});
+                }
+            }
+            if ((ref $request->{key} and # Pre-hashed
+                 $request->{key}->[0] =~ m/^\d+$/ and # Hash is a decimal #
+                 length $request->{key}->[1] > 0 and # Real key has a length
+                 length $request->{key}->[1] <= 250 and # Real key is shorter than 250 chars
+                 -1 == index $request->{key}, " " # Key contains no spaces
+                ) ||
+                (length $request->{key} > 0 and # Real key has a length
+                 length $request->{key} <= 250 and # Real key is shorter than 250 chars
+                 -1 == index $request->{key}, " " # Key contains no spaces
+                )) {
+                $self->log ("Finding server for key %s", $request->{key}) if DEBUG;
+                my $server = $self->{selector}->get_server ($request->{key}, $self->{hash_namespace} ? $self->{namespace} : "");
+                $request->{key} = ref $request->{key} ? $request->{key}->[1] : $request->{key};
+                $request->{nskey} = $self->{namespace} . $request->{key};
+                $self->{servers}->{$server}->enqueue ($request);
+            } else {
+                $self->log ("Key is invalid") if DEBUG;
+                $request->result;
+            }
+        } else {
+            $self->log ("Sending request to all servers") if DEBUG;
+            for my $server (keys %{$self->{servers}} ) {
+                $self->log ("Queueing for %s", $server) if DEBUG;
+                $self->{servers}->{$server}->enqueue ($request->server ($server));
+            }
+        }
+    }
 }
 
 =head1 RATIONALE

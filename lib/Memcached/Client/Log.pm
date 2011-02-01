@@ -5,9 +5,10 @@ use strict;
 use warnings;
 use Data::Dumper qw{Dumper};
 use IO::File qw{};
+use Scalar::Util qw{blessed};
 use base qw{Exporter};
 
-our @EXPORT = qw{DEBUG INFO};
+our @EXPORT = qw{DEBUG LOG};
 
 =head1 SYNOPSIS
 
@@ -41,30 +42,42 @@ BEGIN {
         $log->autoflush (1);
     }
 
-    *INFO = sub (@) {
+    if ($ENV{MCDEBUG}) {
+        *DEBUG = sub () {1};
+    } else {
+        *DEBUG = sub () {0};
+    }
+
+    *LOG = sub (@) {
         local *__ANON__ = "Memcached::Client::Log";
         local $Data::Dumper::Indent = 1;
         local $Data::Dumper::Quotekeys = 0;
         local $Data::Dumper::Sortkeys = 1;
         local $Data::Dumper::Terse = 1;
-        my @callerinfo = caller 1;
-        $callerinfo[3] ||= 'main';
-        $callerinfo[3] =~ s/^Memcached::Client::/M::C::/;
         my $format = shift or return;
-        chomp (my $entry = @_ ? sprintf $format, map { defined $_ ? ref $_ ? Dumper $_ : $_ : '[undef]' } @_ : $format);
-        my $output = "$callerinfo[3] $entry\n";
+        chomp (my $entry = @_ ? sprintf $format, map {
+            if (defined $_) {
+                if (ref $_) {
+                    if (blessed $_ and $_->can ('as_string')) {
+                        $_->as_string;
+                    } else {
+                        Dumper $_;
+                    }
+                } else {
+                    $_
+                }
+            } else {
+                '[undef]'
+            }
+        } @_ : $format);
+        # my $output = "$callerinfo[3] $entry\n";
+        my $output = "$entry\n";
         if ($ENV{MCTEST}) {
             $log->print ($output);
         } else {
             warn $output;
         }
     };
-
-    if ($ENV{MCDEBUG}) {
-        *DEBUG = *INFO;
-    } else {
-        *DEBUG = sub (@) {};
-    }
 }
 
 1;

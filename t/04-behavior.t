@@ -223,7 +223,8 @@ sub async {
                 $client->$method (@{dclone \@args}, sub {
                               my ($received) = @_;
                               my $expected = $mock->$method (@args);
-                              is_deeply ($received, $expected, $msg) or LOG (("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT) if DEBUG;
+                              my $succeed = is_deeply ($received, $expected, $msg);
+                              LOG (("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT) unless $succeed;
                               if (scalar @tests) {
                                   if (0 == --$failure) {
                                       note "Failing $candidate";
@@ -253,7 +254,8 @@ sub sync {
         LOG ("T: %s is %s (%s)", $msg, $method, \@args) if DEBUG;
         my $expected = $mock->$method (@args);
         my $received = $client->$method (@args);
-        is_deeply ($received, $expected, $msg) or LOG (("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT) if DEBUG;
+        my $succeeded = is_deeply ($received, $expected, $msg);
+        LOG (("T: %s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock), BAIL_OUT) unless $succeeded;
         if (@tests) {
             if (0 == --$failure) {
                 note "Failing $candidate";

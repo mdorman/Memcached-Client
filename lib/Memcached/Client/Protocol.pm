@@ -3,6 +3,7 @@ package Memcached::Client::Protocol;
 
 use strict;
 use warnings;
+use Memcached::Client::Log qw{LOG};
 
 =head1 SYNOPSIS
 
@@ -22,6 +23,20 @@ sub new {
     return $self;
 }
 
+=method C<log>
+
+Log the specified message with an appropriate prefix derived from the
+class name.
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    my $prefix = ref $self || $self;
+    $prefix =~ s,Memcached::Client::Protocol::,Protocol/,;
+    LOG ("$prefix> " . $format, @args);
+}
+
 =method prepare_handle
 
 This routine is handed the raw file handle before any connection is
@@ -33,5 +48,19 @@ typically just the binary protocol setting binmode to true).
 sub prepare_handle {
     return sub {};
 }
+
+=method rlog
+
+Knows how to extract information from connections and requests.
+
+=cut
+
+sub rlog {
+    my ($self, $connection, $request, $message) = @_;
+    my $prefix = ref $self || $self;
+    $prefix =~ s,Memcached::Client::Protocol::,Protocol/,;
+    LOG ("$prefix/%s> %s = %s", $connection->{server}, join (" ", $request->{command}, $request->{key}), $message);
+}
+
 
 1;

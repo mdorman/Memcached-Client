@@ -213,11 +213,17 @@ my %opcodes = (add => MEMD_ADD,
                replace => MEMD_REPLACE,
                set => MEMD_SET);
 
+sub __connect {
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "Connected") if DEBUG;
+    $r->result (1);
+    $c->complete;
+}
+
 sub __add {
-    my ($self, $r, $c) = @_;
-    $self->log ("P: %s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{value}) if DEBUG;
-    #FIXME: @{$self}{qw{command data flags}} = $self->{client}->{compressor}->compress ($self->{client}->{serializer}->serialize ($self->{command}, $value));
-    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{key}, pack ('N2', $r->{flags}, $r->{expiration}), $r->{data});
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, $r->{command}) if DEBUG;
+    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{nskey}, pack ('N2', $r->{flags}, $r->{expiration}), $r->{data});
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
                                  $r->result (0 == $msg->{status} ? 1 : 0);
@@ -226,12 +232,12 @@ sub __add {
 }
 
 sub __decr {
-    my ($self, $r, $c) = @_;
-    $self->log ("P: %s: %s - %s - %s", $r->{command}, $c->{server}, $r->{key}, $r->{delta}) if DEBUG;
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, $r->{command}) if DEBUG;
     $r->{expire} = defined $r->{data} ? 0 : 0xffffffff;
     $r->{data} ||= 0;
     my $extras = HAS_64BIT ? pack('Q2L', $r->{delta}, $r->{data}, $r->{expire}) : pack('N5', 0, $r->{delta}, 0, $r->{data}, $r->{expire});
-    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{key}, $extras, undef, undef, undef, undef);
+    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{nskey}, $extras, undef, undef, undef, undef);
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
                                  $self->log ("Our message: %s", $msg) if DEBUG;
@@ -247,9 +253,9 @@ sub __decr {
 }
 
 sub __delete {
-    my ($self, $r, $c) = @_;
-    $self->log ("P: delete: %s - %s", $c->{server}, $r->{key}) if DEBUG;
-    $c->{handle}->push_write (memcached_bin => MEMD_DELETE, $r->{key});
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "delete") if DEBUG;
+    $c->{handle}->push_write (memcached_bin => MEMD_DELETE, $r->{nskey});
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
                                  $r->result (0 == $msg->{status} ? 1 : 0);
@@ -258,8 +264,8 @@ sub __delete {
 }
 
 sub __flush_all {
-    my ($self, $r, $c) = @_;
-    $self->log ("P: flush_all: %s", $c->{server}) if DEBUG;
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "flush_all") if DEBUG;
     $c->{handle}->push_write (memcached_bin => MEMD_FLUSH);
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
@@ -269,23 +275,26 @@ sub __flush_all {
 }
 
 sub __get {
-    my ($self, $r, $c) = @_;
-    $self->log ("P: get: %s - %s", $c->{server}, $r->{key}) if DEBUG;
-    $c->{handle}->push_write (memcached_bin => MEMD_GETK, $r->{key});
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "get") if DEBUG;
+    $c->{handle}->push_write (memcached_bin => MEMD_GETK, $r->{nskey});
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
+                                 $self->log ("Our message: %s", $msg) if DEBUG;
                                  my ($flags, $exptime) = unpack('N2', $msg->{extra});
                                  if (0 == $msg->{status} and exists $msg->{key} && exists $msg->{value}) {
                                      # FIXME: $self->{result} = $self->{client}->{serializer}->deserialize ($self->{client}->{compressor}->decompress ($data, $flags));
                                      $r->result ($msg->{value}, $flags, $msg->{cas});
+                                 } else {
+                                     $r->result;
                                  }
                                  $c->complete;
                              });
 }
 
 sub __version {
-    my ($self, $r, $c) = @_;
-    $self->log ("P: version: %s", $c->{server}) if DEBUG;
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "version") if DEBUG;
     $c->{handle}->push_write (memcached_bin => MEMD_VERSION);
     $c->{handle}->push_read (memcached_bin => sub {
                                  my ($msg) = @_;
@@ -295,15 +304,6 @@ sub __version {
                                  }
                                  $c->complete
                              });
-}
-
-=method log
-
-=cut
-
-sub log {
-    my ($self, $format, @args) = @_;
-    LOG ($format, @args);
 }
 
 1;

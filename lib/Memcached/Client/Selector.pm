@@ -3,6 +3,7 @@ package Memcached::Client::Selector;
 
 use strict;
 use warnings;
+use Memcached::Client::Log qw{LOG};
 
 =head1 SYNOPSIS
 
@@ -20,6 +21,20 @@ sub new {
     my $class = shift;
     my $self = bless {}, $class;
     return $self;
+}
+
+=method C<log>
+
+Log the specified message with an appropriate prefix derived from the
+class name.
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    my $prefix = ref $self || $self;
+    $prefix =~ s,Memcached::Client::Selector::,Selector/,;
+    LOG ("$prefix> " . $format, @args);
 }
 
 =method set_servers

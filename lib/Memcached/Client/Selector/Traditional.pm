@@ -3,7 +3,7 @@ package Memcached::Client::Selector::Traditional;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG LOG};
+use Memcached::Client::Log qw{DEBUG};
 use String::CRC32 qw{crc32};
 use base qw{Memcached::Client::Selector};
 
@@ -85,15 +85,6 @@ sub get_server {
     my $hash = ref $key ? int ($key->[0]) : crc32 ($namespace . $key) >> 16 & 0x7fff;
     $self->log ("Hash is %d, bucket # %d, bucket %s", $hash, $hash % $self->{bucketcount}, $self->{buckets}->[$hash % $self->{bucketcount}]) if DEBUG;
     return $self->{buckets}->[$hash % $self->{bucketcount}];
-}
-
-=method log
-
-=cut
-
-sub log {
-    my ($self, $format, @args) = @_;
-    LOG ($format, @args);
 }
 
 1;

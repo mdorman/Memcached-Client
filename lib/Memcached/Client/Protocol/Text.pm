@@ -10,11 +10,17 @@ sub __cmd {
     return join (' ', grep {defined} @_) . "\r\n";
 }
 
+sub __connect {
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "Connected") if DEBUG;
+    $r->result (1);
+    $c->complete;
+}
+
 sub __add {
-    my ($self, $r, $c) = @_;
-    #FIXME: @{$self}{qw{command data flags}} = $self->{client}->{compressor}->compress ($self->{client}->{serializer}->serialize ($self->{command}, $value));
-    my $command = __cmd ($r->{command}, $r->{key}, $r->{flags}, $r->{expiration}, length $r->{data}) . __cmd ($r->{data});
-    $self->rlog ($r, $c, $command) if DEBUG;
+    my ($self, $c, $r) = @_;
+    my $command = __cmd ($r->{command}, $r->{nskey}, $r->{flags}, $r->{expiration}, length $r->{data}) . __cmd ($r->{data});
+    $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -24,15 +30,15 @@ sub __add {
 }
 
 sub __decr {
-    my ($self, $r, $c) = @_;
-    my $command = __cmd ($r->{command}, $r->{key}, $r->{delta});
-    $self->rlog ($r, $c, $command) if DEBUG;
+    my ($self, $c, $r) = @_;
+    my $command = __cmd ($r->{command}, $r->{nskey}, $r->{delta});
+    $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
                                  if ($line eq 'NOT_FOUND') {
                                      if ($r->{data}) {
-                                            $command = __cmd (add => $r->{key}, 0, 0, length $r->{data}) . __cmd ($r->{data});
+                                            $command = __cmd (add => $r->{nskey}, 0, 0, length $r->{data}) . __cmd ($r->{data});
                                             $c->{handle}->push_write ($command);
                                             $c->{handle}->push_read (line => sub {
                                                                     my ($handle, $line) = @_;
@@ -51,9 +57,9 @@ sub __decr {
 }
 
 sub __delete {
-    my ($self, $r, $c) = @_;
-    my $command = __cmd (delete => $r->{key});
-    $self->rlog ($r, $c, $command) if DEBUG;
+    my ($self, $c, $r) = @_;
+    my $command = __cmd (delete => $r->{nskey});
+    $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -63,9 +69,9 @@ sub __delete {
 }
 
 sub __flush_all {
-    my ($self, $r, $c) = @_;
+    my ($self, $c, $r) = @_;
     my $command = $r->{delay} ? __cmd (flush_all => $r->{delay}) : __cmd ("flush_all");
-    $self->rlog ($r, $c, $command) if DEBUG;
+    $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -75,9 +81,9 @@ sub __flush_all {
 }
 
 sub __get {
-    my ($self, $r, $c) = @_;
-    my $command = __cmd (get => $r->{key});
-    $self->rlog ($r, $c, $command) if DEBUG;
+    my ($self, $c, $r) = @_;
+    my $command = __cmd (get => $r->{nskey});
+    $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -107,9 +113,9 @@ sub __get {
 }
 
 sub __stats {
-    my ($self, $r, $c) = @_;
+    my ($self, $c, $r) = @_;
     my $command = $r->{command} ? __cmd (stats => $r->{command}) : __cmd ("stats");
-    $self->rlog ($r, $c, $command) if DEBUG;
+    $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     my ($code, $result);
     $code = sub {
@@ -129,9 +135,9 @@ sub __stats {
 }
 
 sub __version {
-    my ($self, $r, $c) = @_;
+    my ($self, $c, $r) = @_;
     my $command = __cmd ("version");
-    $self->rlog ($r, $c, $command) if DEBUG;
+    $self->rlog ($c, $r, $command) if DEBUG;
     $c->{handle}->push_write ($command);
     $c->{handle}->push_read (line => sub {
                                  my ($handle, $line) = @_;
@@ -143,26 +149,6 @@ sub __version {
                                  }
                                  $c->complete;
                              });
-}
-
-=method log
-
-=cut
-
-sub log {
-    my ($self, $format, @args) = @_;
-    #my $prefix = ref $self;
-    #$prefix =~ s,Memcached::Client::Request::,Request/,;
-    LOG ("Protocol> " . $format, @args);
-}
-
-=method rlog
-
-=cut
-
-sub rlog {
-    my ($self, $request, $connection, $command) = @_;
-    LOG ("Protocol/%s/%s> %s", $connection->{server}, join (" ", $request->{command}, $request->{key}), $command);
 }
 
 1;

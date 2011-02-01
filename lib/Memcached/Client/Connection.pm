@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use AnyEvent qw{};
 use AnyEvent::Handle qw{};
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG LOG};
 
 =head1 SYNOPSIS
 
@@ -39,29 +39,37 @@ invoked on the raw filehandle before connection.  Generally only
 useful for putting the filehandle in binary mode.
 
 No connection is initiated at construction time, because that would
-require that we perhaps accept a callback to signal completion, etc.
-Simpler to lazily construct the connection when the conditions are
-already right for doing our asynchronous dance.
+require that we perhaps accept a callback to signal completion, or
+create a condvar, etc.  Simpler to lazily construct the connection
+when the conditions are already right for doing our asynchronous
+dance.
 
 =cut
 
 sub new {
-    my ($class, $server, $preparation) = @_;
+    my ($class, $server, $protocol) = @_;
     die "You must give me a server to connect to.\n" unless ($server);
-    $server .= ":11211" unless index $server, ':' > 0;
-    my $self = bless {prepare => $preparation, queue => [], server => $server}, $class;
-    return $self;
+    die "You must give me a protocol to use.\n" unless ($protocol);
+    $server .= ":11211" unless 0 < index $server, ':';
+    my $self = {attempts => 0, protocol => $protocol, queue => [], server => $server};
+    bless $self, $class;
+}
+
+=method log
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ("Connection/%s> " . $format, $self->{server}, @args);
 }
 
 =method connect
 
 C<connect()> initiates a connection to the specified server.
 
-It takes an optional callback parameter that is used to signal when it
-has either completed the connection, or given up in despair.
-
-If it succeeds, it will start processing requests for the server to
-satisfy.
+If it succeeds in connecting, it will start sending requests for the
+server to satisfy.
 
 If it fails, it will respond to all outstanding requests by invoking
 their failback routine.
@@ -69,57 +77,37 @@ their failback routine.
 =cut
 
 sub connect {
-    my ($self, $callback) = @_;
-    if ($self->{handle}) {
-        DEBUG "Already connected to %s", $self->{server};
-        $callback->();
-    } else {
-        DEBUG "Initiating connection to %s", $self->{server};
-        $self->{callback} = $callback;
-        my $attempts = 0;
+    my ($self) = @_;
+    unless ($self->{handle}) {
+        $self->log ("Initiating connection", $self->{server}) if DEBUG;
         $self->{handle} = AnyEvent::Handle->new (connect => [split /:/, $self->{server}],
                                                  keepalive => 1,
                                                  on_connect => sub {
-                                                     DEBUG "Connected with %s", $self->{server};
-                                                     $self->callback;
-                                                     $self->{executing}->run ($self) if ($self->{executing});
+                                                     $self->log ("Connected") if DEBUG;
+                                                     $self->{attempts} = 0;
+                                                     $self->dequeue;
                                                  },
                                                  on_error => sub {
                                                      my ($handle, $fatal, $message) = @_;
-                                                     DEBUG "Removing handle for %s", $self->{server};
+                                                     $self->log ("Removing handle") if DEBUG;
                                                      delete $self->{handle};
                                                      if ($message eq "Broken pipe") {
-                                                         DEBUG "Broken pipe, reconnecting to %s", $self->{server};
+                                                         $self->log ("Broken pipe, reconnecting") if DEBUG;
                                                          $self->connect;
-                                                     } elsif ($message eq "Connection timed out" and ++$attempts < 5) {
-                                                         DEBUG "Connection timed out, retrying to %s", $self->{server};
+                                                     } elsif ($message eq "Connection timed out" and ++$self->{attempts} < 5) {
+                                                         $self->log ("Connection timed out, retrying") if DEBUG;
                                                          $self->connect;
                                                      } else {
-                                                         DEBUG "Error %s, failing %s", $message, $self->{server};
-                                                         $self->callback;
+                                                         $self->log ("Error %s, failing", $message) if DEBUG;
                                                          $self->fail;
                                                      }
                                                  },
                                                  on_prepare => sub {
                                                      my ($handle) = @_;
-                                                     DEBUG "Preparing handle for %s", $self->{server};
-                                                     $self->{prepare}->($handle) if ($self->{prepare});
+                                                     $self->log ("Preparing handle") if DEBUG;
+                                                     $self->{protocol}->prepare_handle ($handle) if ($self->{protocol}->can ("prepare_handle"));
                                                      return $self->{connect_timeout} || 0.5;
                                                  });
-    }
-}
-
-=method callback
-
-If we still have a reference to a callback, this will remove it (so it
-can't fire again) and then call it to signal completion.
-
-=cut
-
-sub callback {
-    my ($self) = @_;
-    if (my $cb = delete $self->{callback}) {
-        $cb->();
     }
 }
 
@@ -133,13 +121,13 @@ connected to, destroy it, and then fail all queued requests.
 sub disconnect {
     my ($self) = @_;
 
-    DEBUG "Disconnecting from %s", $self->{server};
+    $self->log ("Disconnecting") if DEBUG;
     if (my $handle = delete $self->{handle}) {
-        DEBUG "Shutting down handle to %s", $self->{server};
+        $self->log ("Shutting down handle") if DEBUG;
         $handle->destroy();
     }
 
-    DEBUG "failing all requests";
+    $self->log ("Failing all requests") if DEBUG;
     $self->fail;
 }
 
@@ -154,17 +142,32 @@ necessary, it will initiate connection to the server as well.
 
 sub enqueue {
     my ($self, $request) = @_;
-    if ($self->{executing}) {
-        DEBUG 'queueing request';
-        push @{$self->{queue}}, $request;
-    } else {
-        $self->{executing} = $request;
-        DEBUG "Executing";
-        if ($self->{handle}) {
-            $request->run ($self);
-        } else {
-            $self->connect;
+    $self->log ("Request is %s", $request) if DEBUG;
+    push @{$self->{queue}}, $request;
+    $self->dequeue;
+}
+
+=method dequeue
+
+C<dequeue()> checks to see if there's already a request processing,
+and if so, it simply returns (when that request finishes, it will call
+->complete, which will call dequeue).
+
+If nothing is processing, it will attempt to pull the next item from
+the queue and start it processing.
+
+=cut
+
+sub dequeue {
+    my ($self) = @_;
+    if ($self->{handle}) {
+        return if ($self->{executing});
+        if ($self->{executing} = shift @{$self->{queue}}) {
+            $self->log ("Initiating request") if DEBUG;
+            $self->{executing}->run ($self, $self->{protocol});
         }
+    } else {
+        $self->connect;
     }
 }
 
@@ -174,12 +177,9 @@ sub enqueue {
 
 sub complete {
     my ($self) = @_;
-    DEBUG "Done with request";
-    $self->{executing}->complete if ($self->{executing});
-    if ($self->{executing} = shift @{$self->{queue}}) {
-        DEBUG "Executing";
-        $self->{executing}->run ($self);
-    }
+    $self->log ("Done with request") if DEBUG;
+    delete $self->{executing};
+    $self->dequeue;
 }
 
 =method fail
@@ -191,11 +191,15 @@ invokes the failbacks of all queued requests.
 
 sub fail {
     my ($self) = @_;
-    DEBUG "Failing requests";
-    for my $request (grep {defined} delete $self->{executing}, @{$self->{queue}}) {
-        DEBUG "Failing request %s", $request;
-        $request->complete;
-        undef $request;
+    $self->log ("Checking for executing request") if DEBUG;
+    if (my $executing = delete $self->{executing}) {
+        $self->log ("Failing executing request %s", $executing) if DEBUG;
+        $executing->result;
+    }
+    $self->log ("Failing requests in queue: %s", @{$self->{queue}}) if DEBUG;
+    while (my $request = shift @{$self->{queue}}) {
+        $self->log ("Failing request %s", $request) if DEBUG;
+        $request->result;
     }
 }
 
