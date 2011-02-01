@@ -3,6 +3,7 @@ package Memcached::Client::Compressor;
 
 use strict;
 use warnings;
+use Memcached::Client::Log qw{LOG};
 
 =head1 SYNOPSIS
 
@@ -56,6 +57,20 @@ significant enough, it will compress it as well.
 
 sub compress {
     die "You must implement compress";
+}
+
+=method C<log>
+
+Log the specified message with an appropriate prefix derived from the
+class name.
+
+=cut
+
+sub log {
+    my ($self, $format, @args) = @_;
+    my $prefix = ref $self || $self;
+    $prefix =~ s,Memcached::Client::Compressor::,Compressor/,;
+    LOG ("$prefix> " . $format, @args);
 }
 
 1;

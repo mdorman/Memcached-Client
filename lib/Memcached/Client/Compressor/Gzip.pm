@@ -4,7 +4,7 @@ package Memcached::Client::Compressor::Gzip;
 use bytes;
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG LOG};
+use Memcached::Client::Log qw{DEBUG};
 use base qw{Memcached::Client::Compressor};
 
 use constant +{
@@ -58,15 +58,6 @@ sub compress {
     }
 
     return ($command, $data, $flags);
-}
-
-=method log
-
-=cut
-
-sub log {
-    my ($self, $format, @args) = @_;
-    LOG ($format, @args);
 }
 
 1;
