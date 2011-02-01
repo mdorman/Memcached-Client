@@ -1,3 +1,13 @@
+v1.99_01
+
+ * Internal architecture dramatically refactored.  Much cleaner
+   delineation of responsibilities among the classes and objects,
+   making it (IMHO) much easier to trace and understand.
+ * Fixed get_multi---we were expecting an arrayref of keys, rather
+   than an array, which is incompatible with other clients.
+ * Add profile script, as a beginning of an effort to profile the
+   client.
+
 v1.07
 
  * Weaken some references to $self that appear in some anonymous
