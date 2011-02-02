@@ -127,19 +127,6 @@ sub result {
     $self->{cb}->(@values);
 }
 
-=method run
-
-Using a reference to the protocol's routine, and reference to the
-connection that is invoking this request, do the transaction.
-
-=cut
-
-sub run {
-    my ($self, $connection, $protocol) = @_;
-    my $command = $self->{type};
-    $protocol->$command ($connection, $self);
-}
-
 package Memcached::Client::Request::Add;
 # ABSTRACT: Driver for Memcached::Client add-style requests
 

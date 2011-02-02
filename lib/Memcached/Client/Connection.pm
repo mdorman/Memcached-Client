@@ -164,7 +164,8 @@ sub dequeue {
         return if ($self->{executing});
         if ($self->{executing} = shift @{$self->{queue}}) {
             $self->log ("Initiating request") if DEBUG;
-            $self->{executing}->run ($self, $self->{protocol});
+            my $command = $self->{executing}->{type};
+            $self->{protocol}->$command ($self, $self->{executing});
         }
     } else {
         $self->connect;
