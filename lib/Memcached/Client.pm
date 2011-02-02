@@ -392,14 +392,14 @@ returned.
 
 =method add_multi
 
-[$rc = ] add_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+[$rc = ] add_multi (@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
 
-Given an arrayref of [key, value, $exptime] tuples, iterate over them
-and if the specified key does not already exist in the cache, it will
-be set to the specified value.  If an expiration is included, it will
+Given an array of [key, value, $exptime] tuples, iterate over them and
+if the specified key does not already exist in the cache, it will be
+set to the specified value.  If an expiration is included, it will
 determine the lifetime of the object on the server.
 
-Returns a hashref of [key, boolean] tuples, where 1 means the add
+Returns a hashref of {key, boolean} pairs, where 1 means the add
 succeeded, 0 means it failed.
 
 =method append
@@ -414,14 +414,13 @@ returned.
 
 =method append_multi
 
-[$rc = ] append_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+[$rc = ] append_multi (@([$key, $value]), [$cb-E<gt>($rc) || $cv])
 
-Given an arrayref of [key, value, $exptime] tuples, iterate over them
-and if the specified key already exists in the cache, it will have the
-the specified value appended to it.  If an expiration is included, it
-will determine the lifetime of the object on the server.
+Given an array of [key, value] tuples, iterate over them and if the
+specified key already exists in the cache, it will have the the
+specified value appended to it.
 
-Returns a hashref of [key, boolean] tuples, where 1 means the add
+Returns a hashref of {key, boolean} pairs, where 1 means the add
 succeeded, 0 means it failed.
 
 =method decr
@@ -440,17 +439,16 @@ undef will be the result.
 
 =method decr_multi
 
-[$value = ] decr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
+[$value = ] decr_multi (@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
 
-If the specified key already exists in the cache, it will be
-decremented by the specified delta value, or 1 if no delta is
-specified.
+Given an array of either keys, [key, delta] tuples, or [key, delta,
+initial] tuples, iterate over them and if the specified key already
+exists in the cache, it will be decremented by the specified delta, or
+1 if no delta is specified.  If the value does not exist in the cache,
+and an initial value is supplied, the key will be set to that value.
 
-If the value does not exist in the cache, and an initial value is
-supplied, the key will be set to that value.
-
-If the decr succeeds, the resulting value will be returned, otherwise
-undef will be the result.
+Returns a hashref of {key, value} pairs, giving the new values of each
+key.
 
 =method delete
 
@@ -510,15 +508,14 @@ undef will be the result.
 
 [$value = ] incr_multi (\@($key, [$delta (= 1), $initial]), $cb-E<gt>($value) || $cv])
 
-If the specified key already exists in the cache, it will be
-incremented by the specified delta value, or 1 if no delta is
-specified.
+Given an array of either keys, [key, delta] tuples, or [key, delta,
+initial] tuples, iterate over them and if the specified key already
+exists in the cache, it will be incremented by the specified delta, or
+1 if no delta is specified.  If the value does not exist in the cache,
+and an initial value is supplied, the key will be set to that value.
 
-If the value does not exist in the cache, and an initial value is
-supplied, the key will be set to that value.
-
-If the incr succeeds, the resulting value will be returned, otherwise
-undef will be the result.
+Returns a hashref of {key, value} pairs, giving the new values of each
+key.
 
 =method prepend($key, $value, $cb->($rc));
 
@@ -532,14 +529,13 @@ returned.
 
 =method prepend_multi
 
-[$rc = ] prepend_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+[$rc = ] prepend_multi (@([$key, $value]), [$cb-E<gt>($rc) || $cv])
 
-Given an arrayref of [key, value, $exptime] tuples, iterate over them
-and if the specified key already exists in the cache, it will have the
-the specified value prepended to it.  If an expiration is included, it
-will determine the lifetime of the object on the server.
+Given an array of [key, value] tuples, iterate over them and if the
+specified key already exists in the cache, it will have the the
+specified value prepended to it.
 
-Returns a hashref of [key, boolean] tuples, where 1 means the add
+Returns a hashref of {key, boolean} pairs, where 1 means the add
 succeeded, 0 means it failed.
 
 =method remove
@@ -560,14 +556,14 @@ returned.
 
 =method replace_multi
 
-[$rc = ] replace_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+[$rc = ] replace_multi (@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
 
-Given an arrayref of [key, value, $exptime] tuples, iterate over them
-and if the specified key already exists in the cache, it will be set
-to the specified value.  If an expiration is included, it will
-determine the lifetime of the object on the server.
+Given an array of [key, value, $exptime] tuples, iterate over them and
+if the specified key already exists in the cache, it will be set to
+the specified value.  If an expiration is included, it will determine
+the lifetime of the object on the server.
 
-Returns a hashref of [key, boolean] tuples, where 1 means the replace
+Returns a hashref of {key, boolean} pairs, where 1 means the replace
 succeeded, 0 means it failed.
 
 =method set()
@@ -582,13 +578,13 @@ returned.
 
 =method set_multi
 
-[$rc = ] set_multi (\@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
+[$rc = ] set_multi (@([$key, $value, $exptime]), [$cb-E<gt>($rc) || $cv])
 
-Given an arrayref of [key, value, $exptime] tuples, iterate over them
-and set the specified key to the specified value.  If an expiration is
+Given an array of [key, value, $exptime] tuples, iterate over them and
+set the specified key to the specified value.  If an expiration is
 included, it will determine the lifetime of the object on the server.
 
-Returns a hashref of [key, boolean] tuples, where 1 means the set
+Returns a hashref of {key, boolean} pairs, where 1 means the set
 succeeded, 0 means it failed.
 
 =method stats ()
