@@ -631,16 +631,15 @@ sub __submit {
                     $request->{key} = $self->{preprocessor}->($request->{key});
                 }
             }
-            if ((ref $request->{key} and # Pre-hashed
-                 $request->{key}->[0] =~ m/^\d+$/ and # Hash is a decimal #
-                 length $request->{key}->[1] > 0 and # Real key has a length
-                 length $request->{key}->[1] <= 250 and # Real key is shorter than 250 chars
-                 -1 == index $request->{key}->[1], " " # Key contains no spaces
-                ) ||
-                (length $request->{key} > 0 and # Real key has a length
-                 length $request->{key} <= 250 and # Real key is shorter than 250 chars
-                 -1 == index $request->{key}, " " # Key contains no spaces
-                )) {
+            if (ref $request->{key} # Pre-hashed
+                ? ($request->{key}->[0] =~ m/^\d+$/ and # Hash is a decimal #
+                   length $request->{key}->[1] > 0 and # Real key has a length
+                   length $request->{key}->[1] <= 250 and # Real key is shorter than 250 chars
+                   -1 == index $request->{key}->[1], " ") # Key contains no spaces
+                : (length $request->{key} > 0 and # Real key has a length
+                   length $request->{key} <= 250 and # Real key is shorter than 250 chars
+                   -1 == index $request->{key}, " ") # Key contains no spaces
+               ) {
                 $self->log ("Finding server for key %s", $request->{key}) if DEBUG;
                 my $server = $self->{selector}->get_server ($request->{key}, $self->{hash_namespace} ? $self->{namespace} : "");
                 $request->{key} = ref $request->{key} ? $request->{key}->[1] : $request->{key};
