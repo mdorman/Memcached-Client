@@ -367,17 +367,11 @@ likely get an error:
 
 	AnyEvent::CondVar: recursive blocking wait detected
 
-If you call a method in a synchronous fashion, but from a void
-context---that is, you are not doing anything with the return
-value---a warning will be raised.
-
 A method is considered to have been called in an asynchronous fashion
 if it is called with a callback as its last parameter.  If you make a
 call in asynchronous mode, your program is responsible for making sure
-that an event loop is run...otherwise your program will simply hang.
-
-If you call a method in an asynchronous fashion, but you are also
-expecting a return value, a warning will be raised.
+that an event loop is run...otherwise your program will probably just
+exit.
 
 =method add
 
