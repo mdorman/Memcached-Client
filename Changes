@@ -2,6 +2,7 @@ v1.99_02
 
  * Fix {add,append,decr,incr,replace,set}_multi to follow
    Cache::Memcached::Fast (where they originated)
+ * Update documentation.
 
 v1.99_01
 
