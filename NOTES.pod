@@ -1,15 +1,18 @@
 =head1 How it all fits together
 
-During module load, we construct a bunch of methods that are really
-just curried functions creating instances of the various Request
-classes and inserts them into the Memcached::Client namespace.
+C<Memcached::Client> is the central hub
+
+During the loading of the C<Memcached::Client::Request> module, we
+insert a bunch of methods into the C<Memcached::Client> namespace that
+are really just curried functions that create instances of the various
+C<Request> classes.
 
 When you make a request, things go like this (using C<get> as an
 example):
 
-C<$client-E<lt>get> calls the anonymous subroutine that was returned
-when C<M::C::Request::Get-E<lt>generate> (which, due to inheritance,
-is C<M::C::Request-E<lt>generate>) was called.
+C<$client-E<gt>get> calls the anonymous subroutine that was returned
+when C<M::C::Request::Get-E<gt>generate> (which, due to inheritance,
+is C<M::C::Request-E<gt>generate>) was called.
 
 The anonymous sub expects the C<Memcached::Client> object as its first
 parameter, and uses the remainder as arguments for its command.  The
