@@ -51,7 +51,6 @@ sub generate {
     $class->log ("Class is %s, Command is %s", $class, $command) if DEBUG;
     return sub {
         my ($client, @args) = @_;
-        local *__ANON__ = "Memcached::Client::Request::${class}::new";
 
         my $request = bless {command => $command}, $class;
         $request->log ("Request is %s", $request) if DEBUG;
@@ -195,7 +194,6 @@ sub process {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Add";
         $request->{cb} = sub {
             my ($key, $value) = @_;
-            local *__ANON__ = "Memcached::Client::Request::AddMulti::callback";
             $self->log ("Noting that we received %s for %s", $value, $key) if DEBUG;
             $self->{result}->{$key} = $value if (defined $value);
             $self->result unless (--$self->{partial});
@@ -267,7 +265,6 @@ sub process {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Decr";
         $request->{cb} = sub {
             my ($key, $value) = @_;
-            local *__ANON__ = "Memcached::Client::Request::DecrMulti::callback";
             $self->log ("Noting that we received %s for %s", $value, $key) if DEBUG;
             $self->{result}->{$key} = $value if (defined $value);
             $self->result unless (--$self->{partial});
@@ -332,7 +329,6 @@ sub process {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Delete";
         $request->{cb} = sub {
             my ($key, $value) = @_;
-            local *__ANON__ = "Memcached::Client::Request::DeleteMulti::callback";
             $self->log ("Noting that we received %s for %s", $value, $key) if DEBUG;
             $self->{result}->{$key} = $value if (defined $value);
             $self->result unless (--$self->{partial});
@@ -396,7 +392,6 @@ sub process {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Get";
         $request->{cb} = sub {
             my ($key, $value) = @_;
-            local *__ANON__ = "Memcached::Client::Request::GetMulti::callback";
             $self->log ("Noting that we received %s for %s", $value, $key) if DEBUG;
             $self->{result}->{$key} = $value if (defined $value);
             $self->result unless (--$self->{partial});
@@ -464,7 +459,6 @@ sub server {
     my $request = bless {command => $self->{command}, key => $server, sendkey => 1, type => $self->{type}}, "Memcached::Client::Request::Broadcast";
     $request->{cb} = sub {
         my ($key, $value) = @_;
-        local *__ANON__ = "Memcached::Client::Request::BroadcastMulti::callback";
         $self->log ("Noting that we received %s for %s", $value, $key) if DEBUG;
         $self->{result}->{$key} = $value if (defined $value);
         $self->result unless (--$self->{partial});
@@ -527,7 +521,6 @@ sub server {
     my $request = bless {command => "connect", key => $server, sendkey => 1, type => "__connect"}, "Memcached::Client::Request::Connect";
     $request->{cb} = sub {
         my ($key, $value) = @_;
-        local *__ANON__ = "Memcached::Client::Request::ConnectMulti::callback";
         $self->log ("Noting that we received %s for %s", $value, $key) if DEBUG;
         $self->{result}->{$key} = $value if (defined $value);
         $self->result (1) unless (--$self->{partial});
