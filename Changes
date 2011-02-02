@@ -1,3 +1,9 @@
+v1.99_03
+
+ * Fixed up a lot of documentation
+ * Profiling and tracing
+ * Micro-optimizd some bits of code.
+
 v1.99_02
 
  * Fix {add,append,decr,incr,replace,set}_multi to follow
