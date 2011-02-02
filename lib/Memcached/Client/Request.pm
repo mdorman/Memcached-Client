@@ -108,12 +108,10 @@ there is one, otherwise it will return undef.
 =cut
 
 sub result {
-    my ($self, $value) = @_;
-    $self->log ("$self received result %s", $value) if DEBUG;
-    my @values;
-    if (defined $value) {
+    my ($self, @values) = @_;
+    $self->log ("$self received result %s", \@values) if DEBUG;
+    if (scalar @values) {
         $self->log ("We have a result") if DEBUG;
-        push @values, $value;
     } elsif (defined $self->{result}) {
         $self->log ("We have a stored result") if DEBUG;
         push @values, $self->{result};
