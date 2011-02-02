@@ -373,6 +373,11 @@ call in asynchronous mode, your program is responsible for making sure
 that an event loop is run...otherwise your program will probably just
 exit.
 
+When, in discussing the methods below, the documentation says a value
+will be returned, it means that in synchronous mode, the result will
+be returned from the function, or in asynchronous mode, the result
+will be passed to the callback when it is invoked.
+
 =method add
 
 [$rc = ] add ($key, $value[, $exptime, $cb-E<gt>($rc) || $cv])
