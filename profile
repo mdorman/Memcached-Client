@@ -7,9 +7,6 @@ use Memcached::Client qw{};
 use Storable qw{dclone freeze thaw};
 use t::Memcached::Manager qw{};
 
-#use Aspect;
-#aspect NYTProf => call qr/^Memcached::Client::/ & ! call qr/^Memcached::Client::Log/;
-
 my @tests = (['connect', 1,
               '->connect'],
 
@@ -183,13 +180,10 @@ my @tests = (['connect', 1,
 
 die 'No memcached found' unless my $memcached = find_memcached ();
 
-my $servers = [['127.0.0.1:10001', 2],
-               ['127.0.0.1:10002', 2],
-               ['127.0.0.1:10003', 3],
-               ['127.0.0.1:10004', 3],
-               ['127.0.0.1:10005', 3],
-               ['127.0.0.1:10006', 3],
-               '127.0.0.1:10007'];
+my $servers = ['127.0.0.1:10001',
+               '127.0.0.1:10002',
+               '127.0.0.1:10003',
+               '127.0.0.1:10004'];
 
 my $manager = t::Memcached::Manager->new (memcached => $memcached, servers => $servers);
 
@@ -210,7 +204,7 @@ sub async {
     printf "T: running %s/%s async\n", $selector, $protocol;
     my @tests = @{thaw $tests};
     my $cv = AE::cv;
-    DB::enable_profile();
+    DB::enable_profile() if defined $ENV{NYTPROF};
     my $test; $test = sub {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
@@ -225,7 +219,7 @@ sub async {
                           });
     };
     $test->();
-    DB::disable_profile();
+    DB::disable_profile() if defined $ENV{NYTPROF};
     $cv->recv;
 }
 
@@ -237,9 +231,9 @@ sub sync {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
         printf "T: %s is %s (%s)\n", $msg, $method, join ",", @args;
-        DB::enable_profile();
+        DB::enable_profile() if defined $ENV{NYTPROF};
         my $received = $client->$method (@args);
-        DB::disable_profile();
+        DB::disable_profile() if defined $ENV{NYTPROF};
         last unless (@tests);
     }
 }
