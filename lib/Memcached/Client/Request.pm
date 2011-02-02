@@ -175,7 +175,7 @@ when all outstanding requests are in and return the aggregate result.
 
 sub process {
     my ($self, @requests) = @_;
-    $self->{default} = {};
+    $self->{result} = {};
     return () unless @requests;
     $self->{partial} = 0;
     return grep {$_} map {
@@ -246,7 +246,7 @@ when all outstanding requests are in and return the aggregate result.
 
 sub process {
     my ($self, @requests) = @_;
-    $self->{default} = {};
+    $self->{result} = {};
     return () unless (@requests);
     $self->{partial} = 0;
     return grep {defined} map {
@@ -311,7 +311,7 @@ return the aggregate result.
 
 sub process {
     my ($self, @keys) = @_;
-    $self->{default} = {};
+    $self->{result} = {};
     return () unless (@keys);
     $self->{partial} = 0;
     return grep {$_} map {
@@ -374,7 +374,7 @@ return the aggregate result.
 
 sub process {
     my ($self, @keys) = @_;
-    $self->{default} = {};
+    $self->{result} = {};
     return () unless (@keys);
     $self->{partial} = 0;
     return grep {defined} map {
@@ -429,7 +429,7 @@ itself assuming a command was specified.
 sub process {
     my ($self, @arguments) = @_;
     $self->{arguments} = \@arguments;
-    $self->{default} = {};
+    $self->{result} = {};
     $self->{partial} = 0;
     $self->{type} = "__$self->{command}";
     return $self;
