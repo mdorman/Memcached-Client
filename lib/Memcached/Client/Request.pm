@@ -144,12 +144,12 @@ a reference to itself.
 sub process {
     my ($self, $key, $value, $expiration) = @_;
     $self->{default} = 0;
+    return () unless ($key and $value);
     $self->{expiration} = int ($expiration || 0);
     $self->{key} = $key;
     $self->{type} = "__add";
     $self->{value} = $value;
-    return $self if ($self->{key} and $self->{value});
-    return ();
+    return $self;
 }
 
 *Memcached::Client::add = Memcached::Client::Request::Add->generate ("add");
@@ -176,6 +176,7 @@ when all outstanding requests are in and return the aggregate result.
 sub process {
     my ($self, @requests) = @_;
     $self->{default} = {};
+    return () unless @requests;
     $self->{partial} = 0;
     return grep {$_} map {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Add";
@@ -216,14 +217,13 @@ a reference to itself.
 
 sub process {
     my ($self, $key, $delta, $initial) = @_;
+    return () unless ($key);
     $self->log ("arguments are %s", \@_) if DEBUG;
     $self->{data} = defined $initial ? int ($initial) : undef;
-    $self->{default} = undef;
     $self->{delta} = int ($delta || 1);
     $self->{key} = $key;
     $self->{type} = "__decr";
-    return $self if ($self->{key} and $self->{delta});
-    return ();
+    return $self;
 }
 
 *Memcached::Client::decr = Memcached::Client::Request::Decr->generate ("decr");
@@ -247,6 +247,7 @@ when all outstanding requests are in and return the aggregate result.
 sub process {
     my ($self, @requests) = @_;
     $self->{default} = {};
+    return () unless (@requests);
     $self->{partial} = 0;
     return grep {defined} map {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Decr";
@@ -283,12 +284,12 @@ the arguments look appropriate, it returns a reference to itself.
 
 sub process {
     my ($self, $key) = @_;
-    $self->log ("arguments are %s", \@_) if DEBUG;
     $self->{default} = 0;
+    return () unless ($key);
+    $self->log ("arguments are %s", \@_) if DEBUG;
     $self->{key} = $key;
     $self->{type} = "__delete";
-    return $self if ($self->{key});
-    return ();
+    return $self;
 }
 
 *Memcached::Client::delete = Memcached::Client::Request::Delete->generate ("delete");
@@ -311,6 +312,7 @@ return the aggregate result.
 sub process {
     my ($self, @keys) = @_;
     $self->{default} = {};
+    return () unless (@keys);
     $self->{partial} = 0;
     return grep {$_} map {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Delete";
@@ -346,12 +348,11 @@ arguments look appropriate, it returns a reference to itself.
 
 sub process {
     my ($self, $key) = @_;
+    return () unless ($key);
     $self->log ("arguments are %s", \@_) if DEBUG;
     $self->{type} = "__get";
-    $self->{default} = undef;
     $self->{key} = $key;
-    return $self if ($self->{key});
-    return ();
+    return $self;
 }
 
 *Memcached::Client::get = Memcached::Client::Request::Get->generate ("get");
@@ -374,6 +375,7 @@ return the aggregate result.
 sub process {
     my ($self, @keys) = @_;
     $self->{default} = {};
+    return () unless (@keys);
     $self->{partial} = 0;
     return grep {defined} map {
         my $request = bless {command => $self->{command}, sendkey => 1}, "Memcached::Client::Request::Get";
@@ -408,8 +410,7 @@ assuming a command was specified.
 =cut
 
 sub process {
-    my ($self) = @_;
-    return $self;
+    return $_[0];
 }
 
 package Memcached::Client::Request::BroadcastMulti;
@@ -431,7 +432,7 @@ sub process {
     $self->{default} = {};
     $self->{partial} = 0;
     $self->{type} = "__$self->{command}";
-    return $self if ($self->{command});
+    return $self;
 }
 
 =method C<server>
@@ -474,8 +475,7 @@ assuming a command was specified.
 =cut
 
 sub process {
-    my ($self) = @_;
-    return $self;
+    return $_[0];
 }
 
 package Memcached::Client::Request::ConnectMulti;
@@ -492,8 +492,7 @@ assuming a command was specified.
 =cut
 
 sub process {
-    my ($self) = @_;
-    return $self;
+    return $_[0];
 }
 
 =method C<server>
