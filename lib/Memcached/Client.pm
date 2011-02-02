@@ -635,7 +635,7 @@ sub __submit {
                  $request->{key}->[0] =~ m/^\d+$/ and # Hash is a decimal #
                  length $request->{key}->[1] > 0 and # Real key has a length
                  length $request->{key}->[1] <= 250 and # Real key is shorter than 250 chars
-                 -1 == index $request->{key}, " " # Key contains no spaces
+                 -1 == index $request->{key}->[1], " " # Key contains no spaces
                 ) ||
                 (length $request->{key} > 0 and # Real key has a length
                  length $request->{key} <= 250 and # Real key is shorter than 250 chars
