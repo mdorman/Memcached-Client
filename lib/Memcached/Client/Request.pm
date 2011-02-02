@@ -53,28 +53,28 @@ sub generate {
         my ($client, @args) = @_;
 
         my $request = bless {command => $command}, $class;
-        $request->log ("Request is %s", $request) if DEBUG;
+        $class->log ("Request is %s", $request) if DEBUG;
 
-        $request->log ("Checking for condvar/callback") if DEBUG;
+        $class->log ("Checking for condvar/callback") if DEBUG;
         if (ref $args[-1] eq 'AnyEvent::CondVar' or ref $args[-1] eq 'CODE') {
-            $request->log ("Found condvar/callback") if DEBUG;
+            $class->log ("Found condvar/callback") if DEBUG;
             $request->{cb} = pop @args;
         } else {
-            $request->log ("Making own condvar") if DEBUG;
+            $class->log ("Making own condvar") if DEBUG;
             $request->{cb} = AE::cv;
             $request->{wait} = 1;
         }
 
-        $request->log ("Processing arguments: %s", \@args) if DEBUG;
+        $class->log ("Processing arguments: %s", \@args) if DEBUG;
         my @requests = $request->process (@args);
         if (@requests) {
-            $request->log ("Submitting request(s)") if DEBUG;
+            $class->log ("Submitting request(s)") if DEBUG;
             $client->__submit (@requests);
         } else {
             $request->result;
         }
 
-        $request->log ("Checking whether to wait") if DEBUG;
+        $class->log ("Checking whether to wait") if DEBUG;
         $request->{cb}->recv if ($request->{wait});
     }
 }
