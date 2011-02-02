@@ -144,7 +144,7 @@ a reference to itself.
 sub process {
     my ($self, $key, $value, $expiration) = @_;
     $self->{default} = 0;
-    return () unless ($key and $value);
+    return () unless (defined $key and defined $value);
     $self->{expiration} = int ($expiration || 0);
     $self->{key} = $key;
     $self->{type} = "__add";
@@ -217,7 +217,7 @@ a reference to itself.
 
 sub process {
     my ($self, $key, $delta, $initial) = @_;
-    return () unless ($key);
+    return () unless (defined $key);
     $self->log ("arguments are %s", \@_) if DEBUG;
     $self->{data} = defined $initial ? int ($initial) : undef;
     $self->{delta} = int ($delta || 1);
@@ -285,7 +285,7 @@ the arguments look appropriate, it returns a reference to itself.
 sub process {
     my ($self, $key) = @_;
     $self->{default} = 0;
-    return () unless ($key);
+    return () unless (defined $key);
     $self->log ("arguments are %s", \@_) if DEBUG;
     $self->{key} = $key;
     $self->{type} = "__delete";
@@ -348,7 +348,7 @@ arguments look appropriate, it returns a reference to itself.
 
 sub process {
     my ($self, $key) = @_;
-    return () unless ($key);
+    return () unless (defined $key);
     $self->log ("arguments are %s", \@_) if DEBUG;
     $self->{type} = "__get";
     $self->{key} = $key;
