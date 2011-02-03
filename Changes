@@ -1,17 +1,11 @@
-v1.99_03
+v2.00
 
  * Fixed up a lot of documentation
  * Profiling and tracing
  * Micro-optimizd some bits of code.
-
-v1.99_02
-
  * Fix {add,append,decr,incr,replace,set}_multi to follow
    Cache::Memcached::Fast (where they originated)
  * Update documentation.
-
-v1.99_01
-
  * Internal architecture dramatically refactored.  Much cleaner
    delineation of responsibilities among the classes and objects,
    making it (IMHO) much easier to trace and understand.
