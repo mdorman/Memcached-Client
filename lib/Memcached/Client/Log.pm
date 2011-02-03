@@ -1,6 +1,6 @@
 package Memcached::Client::Log;
 BEGIN {
-  $Memcached::Client::Log::VERSION = '1.07';
+  $Memcached::Client::Log::VERSION = '2.00';
 }
 # ABSTRACT: Logging support for Memcached::Client
 
@@ -8,9 +8,10 @@ use strict;
 use warnings;
 use Data::Dumper qw{Dumper};
 use IO::File qw{};
+use Scalar::Util qw{blessed};
 use base qw{Exporter};
 
-our @EXPORT = qw{DEBUG INFO};
+our @EXPORT = qw{DEBUG LOG};
 
 
 # Hook into $SIG{__WARN__} if you want to route these debug messages
@@ -24,26 +25,41 @@ BEGIN {
         $log->autoflush (1);
     }
 
-    *INFO = sub (@) {
-        local *__ANON__ = "Memcached::Client::Log";
+    if ($ENV{MCDEBUG}) {
+        *DEBUG = sub () {1};
+    } else {
+        *DEBUG = sub () {0};
+    }
+
+    *LOG = sub (@) {
         local $Data::Dumper::Indent = 1;
         local $Data::Dumper::Quotekeys = 0;
         local $Data::Dumper::Sortkeys = 1;
         local $Data::Dumper::Terse = 1;
         my $format = shift or return;
-        chomp (my $entry = @_ ? sprintf $format, map { defined $_ ? ref $_ ? Dumper $_ : $_ : '[undef]' } @_ : $format);
+        chomp (my $entry = @_ ? sprintf $format, map {
+            if (defined $_) {
+                if (ref $_) {
+                    if (blessed $_ and $_->can ('as_string')) {
+                        $_->as_string;
+                    } else {
+                        Dumper $_;
+                    }
+                } else {
+                    $_
+                }
+            } else {
+                '[undef]'
+            }
+        } @_ : $format);
+        # my $output = "$callerinfo[3] $entry\n";
+        my $output = "$entry\n";
         if ($ENV{MCTEST}) {
-            $log->print ("$entry\n");
+            $log->print ($output);
         } else {
-            warn "$entry\n";
+            warn $output;
         }
     };
-
-    if ($ENV{MCDEBUG}) {
-        *DEBUG = *INFO;
-    } else {
-        *DEBUG = sub (@) {};
-    }
 }
 
 1;
@@ -57,7 +73,7 @@ Memcached::Client::Log - Logging support for Memcached::Client
 
 =head1 VERSION
 
-version 1.07
+version 2.00
 
 =head1 SYNOPSIS
 
@@ -75,9 +91,9 @@ the structure of any references that are made.
 If the variable MCDEBUG is false, the debugging code should be
 compiled out entirely.
 
-=head2 INFO
+=head2 LOG
 
-INFO() will warn the user with the specified message, formatted with
+LOG() will inform the user with the specified message, formatted with
 sprintf and dumping the structure of any references that are made.
 
 =head1 AUTHOR

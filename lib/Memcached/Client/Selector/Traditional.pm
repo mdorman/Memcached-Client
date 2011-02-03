@@ -1,6 +1,6 @@
 package Memcached::Client::Selector::Traditional;
 BEGIN {
-  $Memcached::Client::Selector::Traditional::VERSION = '1.07';
+  $Memcached::Client::Selector::Traditional::VERSION = '2.00';
 }
 #ABSTRACT: Implements Traditional Memcached Hashing
 
@@ -13,8 +13,8 @@ use base qw{Memcached::Client::Selector};
 
 sub set_servers {
     my ($self, $list) = @_;
+    $self->log ("list: %s", $list) if DEBUG;
     if ($list) {
-        DEBUG "S: Setting server list to %s", $list;
         my $count = scalar @{$list};
         if (1 < $count) {
             $self->{buckets} = [];
@@ -28,9 +28,8 @@ sub set_servers {
                 }
             }
             $self->{bucketcount} = scalar @{$self->{buckets}};
-            DEBUG "S: Bucket list is %s, bucket count is %d", $self->{buckets}, $self->{bucketcount};
+            $self->log ("bucket count: %d\nbucket list: %s", $self->{bucketcount}, $self->{buckets}) if DEBUG;
         } elsif (1 == $count) {
-            # Handle ->set_servers ([['localhost:11211' => 5]])
             $self->{_single_sock} = ref $list->[0] ? $list->[0]->[0] : $list->[0];
         }
     } else {
@@ -49,7 +48,7 @@ sub get_server {
     return unless $self->{buckets};
     $namespace ||= "";
     my $hash = ref $key ? int ($key->[0]) : crc32 ($namespace . $key) >> 16 & 0x7fff;
-    DEBUG "S: Hash value is %s, bucket # is %s, bucket value is %s", $hash, $hash % $self->{bucketcount}, $self->{buckets}->[$hash % $self->{bucketcount}];
+    $self->log ("Hash is %d, bucket # %d, bucket %s", $hash, $hash % $self->{bucketcount}, $self->{buckets}->[$hash % $self->{bucketcount}]) if DEBUG;
     return $self->{buckets}->[$hash % $self->{bucketcount}];
 }
 
@@ -64,7 +63,7 @@ Memcached::Client::Selector::Traditional - Implements Traditional Memcached Hash
 
 =head1 VERSION
 
-version 1.07
+version 2.00
 
 =head1 SYNOPSIS
 

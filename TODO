@@ -8,5 +8,4 @@
 
  * Other hashing mechanisms. Consistent Hashing (patches welcome)
 
- * Turn the requests into objects to we can carry around state and
-   other information more easily.
+ * Implement cas/cas_multi/gets/gets_multi a la C::M::Fast.

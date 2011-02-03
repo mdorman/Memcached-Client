@@ -1,6 +1,6 @@
 package Memcached::Client::Protocol::Binary;
 BEGIN {
-  $Memcached::Client::Protocol::Binary::VERSION = '1.07';
+  $Memcached::Client::Protocol::Binary::VERSION = '2.00';
 }
 # ABSTRACT: Implements new binary memcached protocol
 
@@ -8,7 +8,7 @@ use strict;
 use warnings;
 use AnyEvent::Handle qw{};
 use Config;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use bytes;
 
 use base qw{Memcached::Client::Protocol};
@@ -126,9 +126,7 @@ AnyEvent::Handle::register_read_type memcached_bin => sub {
 
 sub __prepare_handle {
     my ($self, $fh) = @_;
-    # FIXME: We shoudl also install an on_read handler here, since
-    # nowait requests *can* produce output.
-    binmode($fh);
+    binmode $fh;
 }
 
 AnyEvent::Handle::register_write_type memcached_bin => sub {
@@ -210,111 +208,105 @@ sub _status_str {
     return $strings{$status};
 }
 
-{
-    my $generator = sub {
-        my ($name, $opcode) = @_;
-        sub {
-            my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
-            $flags ||= 0;
-            my $extras = pack ('N2', $flags, $expiration);
-            $handle->push_write (memcached_bin => $opcode, $key, $extras, $value);
-            $handle->push_read (memcached_bin => sub {
-                                    my ($msg) = @_;
-                                    $cv->send (0 == $msg->{status} ? 1 : 0);
-                                });
-        }
-    };
+my %opcodes = (add => MEMD_ADD,
+               append => MEMD_APPEND,
+               decr => MEMD_DECREMENT,
+               incr => MEMD_INCREMENT,
+               prepend => MEMD_PREPEND,
+               replace => MEMD_REPLACE,
+               set => MEMD_SET);
 
-    *__add     = $generator->(add     => MEMD_ADD);
-    *__append  = $generator->(append  => MEMD_APPEND);
-    *__prepend = $generator->(prepend => MEMD_PREPEND);
-    *__replace = $generator->(replace => MEMD_REPLACE);
-    *__set     = $generator->(set     => MEMD_SET);
+sub __connect {
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "Connected") if DEBUG;
+    $r->result (1);
+    $c->complete;
 }
 
-{
-    my $generator = sub {
-        my ($name, $opcode) = @_;
-        return sub {
-            my ($self, $handle, $cv, $key, $delta, $initial) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
-            my $expires = defined $initial ? 0 : 0xffffffff;
-            $initial ||= 0;
-            my $extras = HAS_64BIT ?
-              pack('Q2L', $delta, $initial, $expires) :
-                pack('N5', 0, $delta, 0, $initial, $expires);
-            $handle->push_write (memcached_bin => $opcode, $key, $extras, undef, undef, undef, undef);
-            $handle->push_read (memcached_bin => sub {
-                                    my ($msg) = @_;
-                                    my $delta;
-                                    if (HAS_64BIT) {
-                                        $delta = unpack ('Q', $msg->{value});
-                                    } else {
-                                        (undef, $delta) = unpack ('N2', $msg->{value});
-                                    }
-                                    $cv->send (0 == $_[0]->{status} ? $delta : undef);
-                                });
-        }
-    };
-
-    *__decr = $generator->(decr => MEMD_DECREMENT);
-    *__incr = $generator->(incr => MEMD_INCREMENT);
+sub __add {
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, $r->{command}) if DEBUG;
+    my ($data, $flags) = $self->encode ($r->{command}, $r->{value});
+    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{nskey}, pack ('N2', $flags, $r->{expiration}), $data);
+    $c->{handle}->push_read (memcached_bin => sub {
+                                 my ($msg) = @_;
+                                 $r->result (0 == $msg->{status} ? 1 : 0);
+                                 $c->complete;
+                             });
 }
-;
+
+sub __decr {
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, $r->{command}) if DEBUG;
+    $r->{expire} = defined $r->{data} ? 0 : 0xffffffff;
+    $r->{data} ||= 0;
+    my $extras = HAS_64BIT ? pack('Q2L', $r->{delta}, $r->{data}, $r->{expire}) : pack('N5', 0, $r->{delta}, 0, $r->{data}, $r->{expire});
+    $c->{handle}->push_write (memcached_bin => $opcodes{$r->{command}}, $r->{nskey}, $extras, undef, undef, undef, undef);
+    $c->{handle}->push_read (memcached_bin => sub {
+                                 my ($msg) = @_;
+                                 $self->log ("Our message: %s", $msg) if DEBUG;
+                                 my $delta;
+                                 if (HAS_64BIT) {
+                                     $delta = unpack ('Q', $msg->{value});
+                                 } else {
+                                     (undef, $delta) = unpack ('N2', $msg->{value});
+                                 }
+                                 $r->result (0 == $msg->{status} ? $delta : undef);
+                                 $c->complete;
+                             });
+}
 
 sub __delete {
-    my ($self, $handle, $cv, $key) = @_;
-    DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
-    $handle->push_write (memcached_bin => MEMD_DELETE, $key);
-    $handle->push_read (memcached_bin => sub {
-                            my ($msg) = @_;
-                            $cv->send (0 == $msg->{status} ? 1 : 0);
-                        });
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "delete") if DEBUG;
+    $c->{handle}->push_write (memcached_bin => MEMD_DELETE, $r->{nskey});
+    $c->{handle}->push_read (memcached_bin => sub {
+                                 my ($msg) = @_;
+                                 $r->result (0 == $msg->{status} ? 1 : 0);
+                                 $c->complete;
+                             });
 }
 
 sub __flush_all {
-    my ($self, $handle, $cv, $delay) = @_;
-    $handle->push_write (memcached_bin => MEMD_FLUSH);
-    $handle->push_read (memcached_bin => sub {
-                            my ($msg) = @_;
-                            $cv->send (1);
-                        });
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "flush_all") if DEBUG;
+    $c->{handle}->push_write (memcached_bin => MEMD_FLUSH);
+    $c->{handle}->push_read (memcached_bin => sub {
+                                 my ($msg) = @_;
+                                 $r->result (1);
+                                 $c->complete;
+                             });
 }
 
 sub __get {
-    my ($self, $handle, $cv, @keys) = @_;
-    my (%rv);
-    $cv->begin (sub {$_[0]->send (\%rv)});
-    for my $key (@keys) {
-        DEBUG "P: get: %s - %s", $handle->{peername}, $key;
-        $cv->begin;
-        $handle->push_write (memcached_bin => MEMD_GETK, $key);
-        $handle->push_read (memcached_bin => sub {
-                                my ($msg) = @_;
-                                my ($flags, $exptime) = unpack('N2', $msg->{extra});
-                                if (0 == $msg->{status} and exists $msg->{key} && exists $msg->{value}) {
-                                    $rv{$key} = {cas => $msg->{cas}, data => $msg->{value}, flags => $flags};
-                                }
-                                $cv->end;
-                            });
-    }
-    $cv->end;
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "get") if DEBUG;
+    $c->{handle}->push_write (memcached_bin => MEMD_GETK, $r->{nskey});
+    $c->{handle}->push_read (memcached_bin => sub {
+                                 my ($msg) = @_;
+                                 $self->log ("Our message: %s", $msg) if DEBUG;
+                                 my ($flags, $exptime) = unpack('N2', $msg->{extra});
+                                 if (0 == $msg->{status} and exists $msg->{key} && exists $msg->{value}) {
+                                     $r->result ($self->decode ($msg->{value}, $flags));
+                                 } else {
+                                     $r->result;
+                                 }
+                                 $c->complete;
+                             });
 }
 
 sub __version {
-    my ($self, $handle, $cv) = @_;
-    DEBUG "P: version: %s", $handle->{peername};
-    $handle->push_write (memcached_bin => MEMD_VERSION);
-    $handle->push_read (memcached_bin => sub {
-                            my ($msg) = @_;
-                            if (0 == $msg->{status}) {
-                                my $value = unpack ('a*', $msg->{value});
-                                $cv->send ($value);
-                            } else {
-                                $cv->send;
-                            }
-                        });
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "version") if DEBUG;
+    $c->{handle}->push_write (memcached_bin => MEMD_VERSION);
+    $c->{handle}->push_read (memcached_bin => sub {
+                                 my ($msg) = @_;
+                                 if (0 == $msg->{status}) {
+                                     my $value = unpack ('a*', $msg->{value});
+                                     $r->result ($value);
+                                 }
+                                 $c->complete
+                             });
 }
 
 1;
@@ -328,7 +320,7 @@ Memcached::Client::Protocol::Binary - Implements new binary memcached protocol
 
 =head1 VERSION
 
-version 1.07
+version 2.00
 
 =head1 AUTHOR
 

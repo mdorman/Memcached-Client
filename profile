@@ -1,12 +1,11 @@
 #!/usr/bin/perl
 
+use strict;
+use warnings;
+use lib qw{lib};
 use Memcached::Client qw{};
-use Memcached::Client::Log qw{DEBUG LOG};
 use Storable qw{dclone freeze thaw};
 use t::Memcached::Manager qw{};
-use t::Memcached::Mock qw{};
-use t::Memcached::Servers qw{};
-use Test::More;
 
 my @tests = (['connect', 1,
               '->connect'],
@@ -179,62 +178,40 @@ my @tests = (['connect', 1,
              ['get_multi', 'bar', 'foo',
               '->get with all keys set so far']);
 
-my $memcached = find_memcached ();
+die 'No memcached found' unless my $memcached = find_memcached ();
 
-if ($memcached) {
-    plan tests => 2 + (4 * (scalar @tests + 2));
-    note "Using memcached $memcached";
-} else {
-    plan skip_all => 'No memcached found';
-}
+my $servers = ['127.0.0.1:10001',
+               '127.0.0.1:10002',
+               '127.0.0.1:10003',
+               '127.0.0.1:10004'];
 
-isa_ok (my $servers = t::Memcached::Servers->new, 't::Memcached::Servers', 'Get memcached server list manager');
-isa_ok (my $manager = t::Memcached::Manager->new (memcached => $memcached, servers => $servers->servers), 't::Memcached::Manager', 'Get memcached manager');
+my $manager = t::Memcached::Manager->new (memcached => $memcached, servers => $servers);
 
-for my $runner (qw{sync async}) {
+for my $runner (\&sync, \&async) {
     for my $protocol qw(Text Binary) {
         for my $selector qw(Traditional) {
-            note sprintf "running %s/%s %s", $selector, $protocol, $runner;
-            trace ("running %s/%s %s", $selector, $protocol, $runner) if DEBUG;
+            printf "running %s/%s %s\n", $selector, $protocol, $runner;
             my $namespace = join ('.', time, $$, '');
-            # my $namespace = "llamas.";
-            isa_ok (my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers->servers), 'Memcached::Client', "Get memcached client");
-            isa_ok (my $mock = t::Memcached::Mock->new (namespace => $namespace, selector => $selector, servers => $servers->servers, version => $manager->version), 't::Memcached::Mock', "Get mock memcached client");
-            my $candidate = $servers->error;
-            &$runner ($selector, $protocol, $candidate, $client, $mock, freeze \@tests);
-            trace ("Done with %s/%s %s", $selector, $protocol, $runner) if DEBUG;
-            $manager->start ($candidate);
-            $mock->start ($candidate);
+            my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers);
+            $runner->($selector, $protocol, $client, freeze \@tests);
+            printf "Done with %s/%s %s\n", $selector, $protocol, $runner;
         }
     }
 }
 
 sub async {
-    my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
-    trace ("running %s/%s async", $selector, $protocol) if DEBUG;
+    my ($selector, $protocol, $client, $tests) = @_;
+    printf "T: running %s/%s async\n", $selector, $protocol;
     my @tests = @{thaw $tests};
-    my $failure = int rand (scalar @tests - 20) + 10;
-    note "Failing test $failure";
     my $cv = AE::cv;
+    DB::enable_profile() if defined $ENV{NYTPROF};
     my $test; $test = sub {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
-        trace ("%s is %s (%s)", $msg, $method, \@args) if DEBUG;
-                $client->$method (@{dclone \@args}, sub {
+        printf "T: %s is %s (%s)\n", $msg, $method, \@args;
+        $client->$method (@{dclone \@args}, sub {
                               my ($received) = @_;
-                              my $expected = $mock->$method (@args);
-                              my $succeed = is_deeply ($received, $expected, $msg);
-                              unless ($succeed) {
-                                  trace ("%s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock);
-                                  BAIL_OUT;
-                              }
                               if (scalar @tests) {
-                                  if (0 == --$failure) {
-                                      note "Failing $candidate";
-                                      trace ("Failing $candidate") if DEBUG;
-                                      $manager->stop ($candidate);
-                                      $mock->stop ($candidate);
-                                  }
                                   goto &$test;
                               } else {
                                   $cv->send;
@@ -242,36 +219,22 @@ sub async {
                           });
     };
     $test->();
+    DB::disable_profile() if defined $ENV{NYTPROF};
     $cv->recv;
 }
 
 sub sync {
-    my ($selector, $protocol, $candidate, $client, $mock, $tests) = @_;
-    trace ("running %s/%s synchronous", $selector, $protocol) if DEBUG;
+    my ($selector, $protocol, $client, $tests) = @_;
+    printf "T: running %s/%s synchronous\n", $selector, $protocol;
     my @tests = @{thaw $tests};
-    my $failure = int rand (scalar @tests - 20) + 10;
-    note "Failing test $failure";
     while (1) {
         my ($method, @args) = @{shift @tests};
         my $msg = pop @args;
-        trace ("%s is %s (%s)", $msg, $method, \@args) if DEBUG;
-        my $expected = $mock->$method (@args);
+        printf "T: %s is %s (%s)\n", $msg, $method, join ",", @args;
+        DB::enable_profile() if defined $ENV{NYTPROF};
         my $received = $client->$method (@args);
-        my $succeeded = is_deeply ($received, $expected, $msg);
-        unless ($succeeded) {
-            trace ("%s - %s, received %s, expected %s, mock %s", $msg, join ("/", $method, @args), $received, $expected, $mock);
-            BAIL_OUT;
-        }
-        if (@tests) {
-            if (0 == --$failure) {
-                note "Failing $candidate";
-                trace ("Failing $candidate") if DEBUG;
-                $mock->stop ($candidate);
-                $manager->stop ($candidate);
-            }
-        } else {
-            last;
-        }
+        DB::disable_profile() if defined $ENV{NYTPROF};
+        last unless (@tests);
     }
 }
 
@@ -291,14 +254,4 @@ sub find_memcached {
     # We failed, we're going to skip
     return;
 }
-
-=method trace
-
-=cut
-
-sub trace {
-    my ($format, @args) = @_;
-    LOG ("Test> " . $format, @args);
-}
-
 1;

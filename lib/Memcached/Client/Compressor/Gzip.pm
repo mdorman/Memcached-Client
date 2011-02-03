@@ -1,6 +1,6 @@
 package Memcached::Client::Compressor::Gzip;
 BEGIN {
-  $Memcached::Client::Compressor::Gzip::VERSION = '1.07';
+  $Memcached::Client::Compressor::Gzip::VERSION = '2.00';
 }
 #ABSTRACT: Implements Memcached Compression using Gzip
 
@@ -17,50 +17,49 @@ use constant +{
 };
 
 sub decompress {
-    my ($self, $tuple) = @_;
+    my ($self, $data, $flags) = @_;
 
-    return unless defined $tuple->{data};
+    return unless defined $data;
 
-    $tuple->{flags} ||= 0;
+    $flags ||= 0;
 
-    if ($tuple->{flags} & F_COMPRESS && HAVE_ZLIB) {
-        DEBUG "Uncompressing data";
-        $tuple->{data} = Compress::Zlib::memGunzip ($tuple->{data});
+    if ($flags & F_COMPRESS && HAVE_ZLIB) {
+        $self->log ("Uncompressing data") if DEBUG;
+        $data = Compress::Zlib::memGunzip ($data);
     }
 
-    return $tuple;
+    return ($data, $flags);
 }
 
 sub compress {
-    my ($self, $tuple, $command) = @_;
+    my ($self, $data, $flags) = @_;
 
-    DEBUG "Entering compress";
-    return unless defined $tuple->{data};
+    $self->log ("Entering compress") if DEBUG;
+    return unless defined $data;
 
-    DEBUG "Have data";
-    my $len = bytes::length ($tuple->{data});
+    $self->log ("Have data") if DEBUG;
+    my $len = bytes::length ($data);
 
-    DEBUG "Checking for Zlib";
+    $self->log ("Checking for Zlib") if DEBUG;
 
     if (HAVE_ZLIB) {
 
-        DEBUG "Checking for compressable (threshold $self->{compress_threshold}, command $command)";
-        my $compressable = ($command ne 'append' && $command ne 'prepend') && $self->{compress_threshold} && $len >= $self->{compress_threshold};
+        my $compressable = $self->{compress_threshold} && $len >= $self->{compress_threshold};
 
         if ($compressable) {
-            DEBUG "Compressing data";
-            my $c_val = Compress::Zlib::memGzip ($tuple->{data});
+            $self->log ("Compressing data") if DEBUG;
+            my $c_val = Compress::Zlib::memGzip ($data);
             my $c_len = bytes::length ($c_val);
 
             if ($c_len < $len * (1 - COMPRESS_SAVINGS)) {
-                DEBUG "Compressing is a win";
-                $tuple->{data} = $c_val;
-                $tuple->{flags} |= F_COMPRESS;
+                $self->log ("Compressing is a win") if DEBUG;
+                $data = $c_val;
+                $flags |= F_COMPRESS;
             }
         }
     }
 
-    return $tuple;
+    return ($data, $flags);
 }
 
 1;
@@ -74,7 +73,7 @@ Memcached::Client::Compressor::Gzip - Implements Memcached Compression using Gzi
 
 =head1 VERSION
 
-version 1.07
+version 2.00
 
 =head1 AUTHOR
 
