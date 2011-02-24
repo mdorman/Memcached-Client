@@ -1,3 +1,7 @@
+v2.01
+
+ * Fix test suite to try and accomodate older memcached versions.
+
 v2.00
 
  * Fixed up a lot of documentation
