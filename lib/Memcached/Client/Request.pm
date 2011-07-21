@@ -1,6 +1,6 @@
 package Memcached::Client::Request;
 BEGIN {
-  $Memcached::Client::Request::VERSION = '2.00';
+  $Memcached::Client::Request::VERSION = '2.01';
 }
 # ABSTRACT: Base class for Memcached::Client request drivers
 
@@ -73,7 +73,7 @@ sub result {
 
 package Memcached::Client::Request::Add;
 BEGIN {
-  $Memcached::Client::Request::Add::VERSION = '2.00';
+  $Memcached::Client::Request::Add::VERSION = '2.01';
 }
 # ABSTRACT: Driver for Memcached::Client add-style requests
 
@@ -100,7 +100,7 @@ sub process {
 
 package Memcached::Client::Request::AddMulti;
 BEGIN {
-  $Memcached::Client::Request::AddMulti::VERSION = '2.00';
+  $Memcached::Client::Request::AddMulti::VERSION = '2.01';
 }
 # ABSTRACT: Driver for multiple Memcached::Client add-style requests
 
@@ -138,7 +138,7 @@ sub process {
 
 package Memcached::Client::Request::Decr;
 BEGIN {
-  $Memcached::Client::Request::Decr::VERSION = '2.00';
+  $Memcached::Client::Request::Decr::VERSION = '2.01';
 }
 # ABSTRACT: Driver for multiple Memcached::Client decr-style requests
 
@@ -162,7 +162,7 @@ sub process {
 
 package Memcached::Client::Request::DecrMulti;
 BEGIN {
-  $Memcached::Client::Request::DecrMulti::VERSION = '2.00';
+  $Memcached::Client::Request::DecrMulti::VERSION = '2.01';
 }
 # ABSTRACT: Driver for multiple Memcached::Client decr-style requests
 
@@ -197,7 +197,7 @@ sub process {
 
 package Memcached::Client::Request::Delete;
 BEGIN {
-  $Memcached::Client::Request::Delete::VERSION = '2.00';
+  $Memcached::Client::Request::Delete::VERSION = '2.01';
 }
 # ABSTRACT: Driver for Memcached::Client delete requests
 
@@ -219,7 +219,7 @@ sub process {
 
 package Memcached::Client::Request::DeleteMulti;
 BEGIN {
-  $Memcached::Client::Request::DeleteMulti::VERSION = '2.00';
+  $Memcached::Client::Request::DeleteMulti::VERSION = '2.01';
 }
 # ABSTRACT: Driver for multiple Memcached::Client delete requests
 
@@ -253,7 +253,7 @@ sub process {
 
 package Memcached::Client::Request::Get;
 BEGIN {
-  $Memcached::Client::Request::Get::VERSION = '2.00';
+  $Memcached::Client::Request::Get::VERSION = '2.01';
 }
 # ABSTRACT: Driver for Memcached::Client get requests
 
@@ -274,7 +274,7 @@ sub process {
 
 package Memcached::Client::Request::GetMulti;
 BEGIN {
-  $Memcached::Client::Request::GetMulti::VERSION = '2.00';
+  $Memcached::Client::Request::GetMulti::VERSION = '2.01';
 }
 # ABSTRACT: Driver for multiple Memcached::Client get requests
 
@@ -308,7 +308,7 @@ sub process {
 
 package Memcached::Client::Request::Broadcast;
 BEGIN {
-  $Memcached::Client::Request::Broadcast::VERSION = '2.00';
+  $Memcached::Client::Request::Broadcast::VERSION = '2.01';
 }
 # ABSTRACT: Class to manage Memcached::Client server requests
 
@@ -322,7 +322,7 @@ sub process {
 
 package Memcached::Client::Request::BroadcastMulti;
 BEGIN {
-  $Memcached::Client::Request::BroadcastMulti::VERSION = '2.00';
+  $Memcached::Client::Request::BroadcastMulti::VERSION = '2.01';
 }
 # ABSTRACT: Class to manage Memcached::Client broadcast requests
 
@@ -361,7 +361,7 @@ sub server {
 
 package Memcached::Client::Request::Connect;
 BEGIN {
-  $Memcached::Client::Request::Connect::VERSION = '2.00';
+  $Memcached::Client::Request::Connect::VERSION = '2.01';
 }
 # ABSTRACT: Class to manage Memcached::Client server request
 
@@ -375,7 +375,7 @@ sub process {
 
 package Memcached::Client::Request::ConnectMulti;
 BEGIN {
-  $Memcached::Client::Request::ConnectMulti::VERSION = '2.00';
+  $Memcached::Client::Request::ConnectMulti::VERSION = '2.01';
 }
 # ABSTRACT: Class to manage Memcached::Client connection requests
 
@@ -416,7 +416,7 @@ Memcached::Client::Request - Base class for Memcached::Client request drivers
 
 =head1 VERSION
 
-version 2.00
+version 2.01
 
 =head1 SYNOPSIS
 

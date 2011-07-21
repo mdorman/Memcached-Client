@@ -8,7 +8,7 @@ use t::Memcached::Mock qw{};
 use t::Memcached::Servers qw{};
 use Test::More;
 
-my @tests = (['connect', 1,
+my $tests = [['connect', 1,
               '->connect'],
 
              ['version',
@@ -177,23 +177,31 @@ my @tests = (['connect', 1,
               '->flush_all to clear servers'],
 
              ['get_multi', 'bar', 'foo',
-              '->get with all keys set so far']);
+              '->get with all keys set so far']];
 
 my $memcached = find_memcached ();
+my $servers = t::Memcached::Servers->new;
+my $manager = t::Memcached::Manager->new (memcached => $memcached, servers => $servers->servers);
+
+# Everything can handle text
+my @protocols = qw{Text};
+
+# Only > 1.4 can handle Binary
+push @protocols, 'Binary' if ($manager->vstring ge "001004000");
+
+# Now that we have the version, we need to filter our tests
+my $filtered = filter ($tests, $manager->vstring);
 
 if ($memcached) {
-    plan tests => 2 + (4 * (scalar @tests + 2));
+    plan tests => (2 * (scalar @protocols) * (scalar @{$filtered} + 2));
     note "Using memcached $memcached";
 } else {
     plan skip_all => 'No memcached found';
 }
 
-isa_ok (my $servers = t::Memcached::Servers->new, 't::Memcached::Servers', 'Get memcached server list manager');
-isa_ok (my $manager = t::Memcached::Manager->new (memcached => $memcached, servers => $servers->servers), 't::Memcached::Manager', 'Get memcached manager');
-
 for my $runner (qw{sync async}) {
-    for my $protocol qw(Text Binary) {
-        for my $selector qw(Traditional) {
+    for my $protocol (@protocols) {
+        for my $selector (qw(Traditional)) {
             note sprintf "running %s/%s %s", $selector, $protocol, $runner;
             trace ("running %s/%s %s", $selector, $protocol, $runner) if DEBUG;
             my $namespace = join ('.', time, $$, '');
@@ -201,7 +209,7 @@ for my $runner (qw{sync async}) {
             isa_ok (my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers->servers), 'Memcached::Client', "Get memcached client");
             isa_ok (my $mock = t::Memcached::Mock->new (namespace => $namespace, selector => $selector, servers => $servers->servers, version => $manager->version), 't::Memcached::Mock', "Get mock memcached client");
             my $candidate = $servers->error;
-            &$runner ($selector, $protocol, $candidate, $client, $mock, freeze \@tests);
+            &$runner ($selector, $protocol, $candidate, $client, $mock, freeze $filtered);
             trace ("Done with %s/%s %s", $selector, $protocol, $runner) if DEBUG;
             $manager->start ($candidate);
             $mock->start ($candidate);
@@ -299,6 +307,31 @@ sub find_memcached {
 sub trace {
     my ($format, @args) = @_;
     LOG ("Test> " . $format, @args);
+}
+
+sub filter {
+    my ($tests, $version) = @_;
+
+    my @filters;
+
+    if ($version lt "001002004") {
+        push @filters, "cas";
+    }
+    if ($version le "001002002") {
+        push @filters, "append";
+        push @filters, "append_multi";
+        push @filters, "prepend";
+        push @filters, "prepend_multi";
+    }
+    if ($version lt "001001010") {
+        push @filters, "flush_all";
+    }
+
+    my $restring = '^(?:' . join ('|', @filters) . ')$';
+    my $re = qr/$restring/;
+    [grep {
+        $_->[0] =~ m/$re/ ? () : $_;
+    } @{$tests}];
 }
 
 1;
