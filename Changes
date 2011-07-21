@@ -1,3 +1,11 @@
+v1.07
+
+ * Weaken some references to $self that appear in some anonymous
+   subroutines.  This lowers memory usage by ~ 5MB in one instance we
+   have.
+ * Make Memcache::Client::Connection objects responsible for their own
+   disconnection cleanup.
+
 v1.06
 
  * Some general cleanups: documentation clarification, removing dead
