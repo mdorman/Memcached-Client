@@ -4,6 +4,7 @@ MANIFEST
 MANIFEST.SKIP
 META.yml
 Makefile.PL
+NOTES.pod
 README
 TODO
 dist.ini
@@ -15,11 +16,13 @@ lib/Memcached/Client/Log.pm
 lib/Memcached/Client/Protocol.pm
 lib/Memcached/Client/Protocol/Binary.pm
 lib/Memcached/Client/Protocol/Text.pm
+lib/Memcached/Client/Request.pm
 lib/Memcached/Client/Selector.pm
 lib/Memcached/Client/Selector/Traditional.pm
 lib/Memcached/Client/Serializer.pm
 lib/Memcached/Client/Serializer/JSON.pm
 lib/Memcached/Client/Serializer/Storable.pm
+profile
 t/01-selector-.t
 t/01-selector-traditional.t
 t/02-serializer-.t

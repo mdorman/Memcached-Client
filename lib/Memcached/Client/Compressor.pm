@@ -1,11 +1,12 @@
 package Memcached::Client::Compressor;
 BEGIN {
-  $Memcached::Client::Compressor::VERSION = '1.07';
+  $Memcached::Client::Compressor::VERSION = '2.00';
 }
 #ABSTRACT: Abstract Base Class For Memcached::Client Compressor
 
 use strict;
 use warnings;
+use Memcached::Client::Log qw{LOG};
 
 
 sub new {
@@ -32,6 +33,14 @@ sub compress {
     die "You must implement compress";
 }
 
+
+sub log {
+    my ($self, $format, @args) = @_;
+    my $prefix = ref $self || $self;
+    $prefix =~ s,Memcached::Client::Compressor::,Compressor/,;
+    LOG ("$prefix> " . $format, @args);
+}
+
 1;
 
 __END__
@@ -43,7 +52,7 @@ Memcached::Client::Compressor - Abstract Base Class For Memcached::Client Compre
 
 =head1 VERSION
 
-version 1.07
+version 2.00
 
 =head1 SYNOPSIS
 
@@ -71,6 +80,11 @@ data that has been returned.
 C<compress()> will (if the compression code is loadable) compress the
 data it is given, and if the data is large enough and the savings
 significant enough, it will compress it as well.
+
+=head2 C<log>
+
+Log the specified message with an appropriate prefix derived from the
+class name.
 
 =head1 AUTHOR
 

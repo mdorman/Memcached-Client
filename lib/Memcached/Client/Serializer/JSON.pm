@@ -1,30 +1,30 @@
 package Memcached::Client::Serializer::JSON;
 BEGIN {
-  $Memcached::Client::Serializer::JSON::VERSION = '1.07';
+  $Memcached::Client::Serializer::JSON::VERSION = '2.00';
 }
 #ABSTRACT: Implements Memcached Serializing using JSON
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use JSON qw{decode_json encode_json};
 use base qw{Memcached::Client::Serializer};
 
 use constant F_JSON => 4;
 
 sub deserialize {
-    my ($self, $tuple) = @_;
+    my ($self, $data, $flags) = @_;
 
-    return unless defined $tuple->{data};
+    return unless defined $data;
 
-    $tuple->{flags} ||= 0;
+    $flags ||= 0;
 
-    if ($tuple->{flags} & F_JSON) {
-        DEBUG "Deserializing data";
-        $tuple->{data} = decode_json $tuple->{data};
+    if ($flags & F_JSON) {
+        $self->log ("Deserializing data") if DEBUG;
+        $data = decode_json $data;
     }
 
-    return $tuple;
+    return $data;
 }
 
 sub serialize {
@@ -32,17 +32,21 @@ sub serialize {
 
     return unless defined $data;
 
-    my $tuple = {flags => 0};
+    my $flags = 0;
 
     if (ref $data) {
-        DEBUG "Serializing data";
-        $tuple->{data} = encode_json $data;
-        $tuple->{flags} |= F_JSON;
-    } else {
-        $tuple->{data} = $data;
+        $self->log ("Serializing data") if DEBUG;
+        $data = encode_json $data;
+        $flags |= F_JSON;
     }
 
-    return $tuple;
+    return ($data, $flags);
+}
+
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ($format, @args);
 }
 
 1;
@@ -56,7 +60,11 @@ Memcached::Client::Serializer::JSON - Implements Memcached Serializing using JSO
 
 =head1 VERSION
 
-version 1.07
+version 2.00
+
+=head1 METHODS
+
+=head2 log
 
 =head1 AUTHOR
 

@@ -1,178 +1,157 @@
 package Memcached::Client::Protocol::Text;
 BEGIN {
-  $Memcached::Client::Protocol::Text::VERSION = '1.07';
+  $Memcached::Client::Protocol::Text::VERSION = '2.00';
 }
 # ABSTRACT: Implements original text-based memcached protocol
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use base qw{Memcached::Client::Protocol};
 
 sub __cmd {
     return join (' ', grep {defined} @_) . "\r\n";
 }
 
-{
-    my $generator = sub {
-        my ($name) = @_;
-        sub {
-            my ($self, $handle, $cv, $key, $value, $flags, $expiration) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $value;
-            my $command = __cmd ($name, $key, $flags, $expiration, length $value) . __cmd ($value);
-            $handle->push_write ($command);
-            $handle->push_read (line => sub {
-                                    my ($handle, $line) = @_;
-                                    DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                    $cv->send ($line eq 'STORED' ? 1 : 0);
-                                });
-        }
-    };
-
-    *__add     = $generator->("add");
-    *__append  = $generator->("append");
-    *__prepend = $generator->("prepend");
-    *__replace = $generator->("replace");
-    *__set     = $generator->("set");
+sub __connect {
+    my ($self, $c, $r) = @_;
+    $self->rlog ($c, $r, "Connected") if DEBUG;
+    $r->result (1);
+    $c->complete;
 }
 
-{
-    my $generator = sub {
-        my ($name) = @_;
-        return sub {
-            my ($self, $handle, $cv, $key, $delta, $initial) = @_;
-            DEBUG "P: %s: %s - %s - %s", $name, $handle->{peername}, $key, $delta;
-            my $command = __cmd ($name, $key, $delta);
-            DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-            $handle->push_write ($command);
-            $handle->push_read (line => sub {
-                                    my ($handle, $line) = @_;
-                                    DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                    if ($line eq 'NOT_FOUND') {
-                                        if ($initial) {
-                                            $command = __cmd (add => $key, 0, 0, length $initial) . __cmd ($initial);
-                                            $handle->push_write ($command);
-                                            DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-                                            $handle->push_read (line => sub {
-                                                                    my ($handle, $line) = @_;
-                                                                    DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                                                    $cv->send ($line eq 'STORED' ? $initial : undef);
-                                                                });
-                                        } else {
-                                            $cv->send;
-                                        }
-                                    } else {
-                                        $cv->send ($line);
-                                    }
-                                });
-        }
-    };
+sub __add {
+    my ($self, $c, $r) = @_;
+    my ($data, $flags) = $self->encode ($r->{command}, $r->{value});
+    my $command = __cmd ($r->{command}, $r->{nskey}, $flags, $r->{expiration}, length $data) . __cmd ($data);
+    $self->rlog ($c, $r, $command) if DEBUG;
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 $r->result ($line eq 'STORED' ? 1 : 0);
+                                 $c->complete;
+                             });
+}
 
-    *__decr = $generator->("decr");
-    *__incr = $generator->("incr");
+sub __decr {
+    my ($self, $c, $r) = @_;
+    my $command = __cmd ($r->{command}, $r->{nskey}, $r->{delta});
+    $self->rlog ($c, $r, $command) if DEBUG;
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 if ($line eq 'NOT_FOUND') {
+                                     if ($r->{data}) {
+                                            $command = __cmd (add => $r->{nskey}, 0, 0, length $r->{data}) . __cmd ($r->{data});
+                                            $c->{handle}->push_write ($command);
+                                            $c->{handle}->push_read (line => sub {
+                                                                    my ($handle, $line) = @_;
+                                                                    $r->result ($line eq 'STORED' ? $r->{data} : undef);
+                                                                    $c->complete;
+                                                                });
+                                     } else {
+                                         $r->result;
+                                         $c->complete
+                                     }
+                                 } else {
+                                     $r->result ($line);
+                                     $c->complete;
+                                 }
+                             });
 }
 
 sub __delete {
-    my ($self, $handle, $cv, $key) = @_;
-    DEBUG "P: delete: %s - %s", $handle->{peername}, $key;
-    my $command = __cmd (delete => $key);
-    $handle->push_write ($command);
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    $handle->push_read (line => sub {
-                            my ($handle, $line) = @_;
-                            DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                            $cv->send ($line eq 'DELETED' ? 1 : 0);
-                        });
+    my ($self, $c, $r) = @_;
+    my $command = __cmd (delete => $r->{nskey});
+    $self->rlog ($c, $r, $command) if DEBUG;
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 $r->result ($line eq 'DELETED' ? 1 : 0);
+                                 $c->complete;
+                             });
 }
 
 sub __flush_all {
-    my ($self, $handle, $cv, $delay) = @_;
-    my $command = $delay ? __cmd (flush_all => $delay) : __cmd ("flush_all");
-    $handle->push_write ($command);
-    DEBUG "P: flush_all: %s", $handle->{peername};
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    $handle->push_read (line => sub {
-                            my ($handle, $line) = @_;
-                            DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                            $cv->send (1);
-                        });
+    my ($self, $c, $r) = @_;
+    my $command = $r->{delay} ? __cmd (flush_all => $r->{delay}) : __cmd ("flush_all");
+    $self->rlog ($c, $r, $command) if DEBUG;
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 $r->result (1);
+                                 $c->complete;
+                             });
 }
 
 sub __get {
-    my ($self, $handle, $cv, @keys) = @_;
-    for my $key (@keys) {
-        DEBUG "P: get: %s - %s", $handle->{peername}, $key;
-    }
-    my $command = __cmd (get => @keys);
-    $handle->push_write ($command);
-    my ($result);
-    my $code; $code = sub {
-        my ($handle, $line) = @_;
-        DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-        my @bits = split /\s+/, $line;
-        if ($bits[0] eq "VALUE") {
-            my ($key, $flags, $size, $cas) = @bits[1..4];
-            $handle->unshift_read (chunk => $size, sub {
-                                       my ($handle, $data) = @_;
-                                       DEBUG "P [%s]: < %s", $handle->{peername}, $data;
-                                       $result->{$key} = {cas => $cas, data => $data, flags => $flags};
-                                       # Catch the \r\n trailing the value...
-                                       $handle->unshift_read (line => sub {
-                                                                  my ($handle, $line) = @_;
-                                                                  DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                                                              });
-                                       # ...and then start looking for another line
-                                       $handle->push_read (line => $code);
-                                   });
-        } else {
-            warn ("Unexpected result $line from $command") unless ($bits[0] eq 'END');
-            undef $code;
-            $cv->send ($result);
-        }
-    };
-    $handle->push_read (line => $code);
+    my ($self, $c, $r) = @_;
+    my $command = __cmd (get => $r->{nskey});
+    $self->rlog ($c, $r, $command) if DEBUG;
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 $self->log ("Got line %s", $line) if DEBUG;
+                                 my @bits = split /\s+/, $line;
+                                 if ($bits[0] eq "VALUE") {
+                                     my ($key, $flags, $size, $cas) = @bits[1..4];
+                                     $c->{handle}->unshift_read (chunk => $size, sub {
+                                                                my ($handle, $data) = @_;
+                                                                # Catch the \r\n trailing the value...
+                                                                $c->{handle}->unshift_read (line => sub {
+                                                                                           my ($handle, $line) = @_;
+                                                                                           $c->{handle}->unshift_read (line => sub {
+                                                                                                                      my ($handle, $line) = @_;
+                                                                                                                      warn ("Unexpected result $line from $command") unless ($line eq 'END');
+                                                                                                                      $r->result ($self->decode ($data, $flags));
+                                                                                                                      $c->complete;
+                                                                                                                  });
+                                                                                       });
+                                                            });
+                                 } elsif ($bits[0] eq "END") {
+                                     $r->result;
+                                     $c->complete;
+                                 }
+                             });
 }
 
 sub __stats {
-    my ($self, $handle, $cv, $name) = @_;
-    my $command = $name ? __cmd (stats => $name) : __cmd ("stats");
-    $handle->push_write ($command);
-    DEBUG "P: stats: %s", $handle->{peername};
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    my ($result);
-    my $code; $code = sub {
+    my ($self, $c, $r) = @_;
+    my $command = $r->{command} ? __cmd (stats => $r->{command}) : __cmd ("stats");
+    $self->rlog ($c, $r, $command) if DEBUG;
+    $c->{handle}->push_write ($command);
+    my ($code, $result);
+    $code = sub {
         my ($handle, $line) = @_;
-        DEBUG "P [%s]: < %s", $handle->{peername}, $line;
         my @bits = split /\s+/, $line;
         if ($bits[0] eq 'STAT') {
             $result->{$bits[1]} = $bits[2];
-            $handle->push_read (line => $code);
+            $c->{handle}->push_read (line => $code);
         } else {
             warn ("Unexpected result $line from $command") unless ($bits[0] eq 'END');
             undef $code;
-            $cv->send ($result);
+            $r->result ($result);
+            $c->complete;
         }
     };
-    $handle->push_read (line => $code);
+    $c->{handle}->push_read (line => $code);
 }
 
 sub __version {
-    my ($self, $handle, $cv) = @_;
+    my ($self, $c, $r) = @_;
     my $command = __cmd ("version");
-    $handle->push_write ($command);
-    DEBUG "P: version: %s", $handle->{peername};
-    DEBUG "P [%s]: > %s", $handle->{peername}, $command;
-    $handle->push_read (line => sub {
-                            my ($handle, $line) = @_;
-                            DEBUG "P [%s]: < %s", $handle->{peername}, $line;
-                            my @bits = split /\s+/, $line;
-                            if ($bits[0] eq 'VERSION') {
-                                $cv->send ($bits[1]);
-                            } else {
-                                warn ("Unexpected result $line from $command");
-                                $cv->send;
-                            }
-                        });
+    $self->rlog ($c, $r, $command) if DEBUG;
+    $c->{handle}->push_write ($command);
+    $c->{handle}->push_read (line => sub {
+                                 my ($handle, $line) = @_;
+                                 my @bits = split /\s+/, $line;
+                                 if ($bits[0] eq 'VERSION') {
+                                     $r->result ($bits[1]);
+                                 } else {
+                                     warn ("Unexpected result $line from $command");
+                                 }
+                                 $c->complete;
+                             });
 }
 
 1;
@@ -186,7 +165,7 @@ Memcached::Client::Protocol::Text - Implements original text-based memcached pro
 
 =head1 VERSION
 
-version 1.07
+version 2.00
 
 =head1 AUTHOR
 

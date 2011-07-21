@@ -1,30 +1,30 @@
 package Memcached::Client::Serializer::Storable;
 BEGIN {
-  $Memcached::Client::Serializer::Storable::VERSION = '1.07';
+  $Memcached::Client::Serializer::Storable::VERSION = '2.00';
 }
 #ABSTRACT: Implements Memcached Serializing using Storable
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG};
+use Memcached::Client::Log qw{DEBUG LOG};
 use Storable qw{nfreeze thaw};
 use base qw{Memcached::Client::Serializer};
 
 use constant F_STORABLE => 1;
 
 sub deserialize {
-    my ($self, $tuple) = @_;
+    my ($self, $data, $flags) = @_;
 
-    return unless defined $tuple->{data};
+    return unless defined $data;
 
-    $tuple->{flags} ||= 0;
+    $flags ||= 0;
 
-    if ($tuple->{flags} & F_STORABLE) {
-        DEBUG "Deserializing data";
-        $tuple->{data} = thaw $tuple->{data};
+    if ($flags & F_STORABLE) {
+        $self->log ("Deserializing data") if DEBUG;
+        $data = thaw $data;
     }
 
-    return $tuple
+    return $data;
 }
 
 sub serialize {
@@ -32,17 +32,21 @@ sub serialize {
 
     return unless defined $data;
 
-    my $tuple = {flags => 0};
+    my $flags = 0;
 
     if (ref $data) {
-        DEBUG "Serializing data";
-        $tuple->{data} = nfreeze $data;
-        $tuple->{flags} |= F_STORABLE;
-    } else {
-        $tuple->{data} = $data;
+        $self->log ("Serializing data") if DEBUG;
+        $data = nfreeze $data;
+        $flags |= F_STORABLE;
     }
 
-    return $tuple;
+    return ($data, $flags);
+}
+
+
+sub log {
+    my ($self, $format, @args) = @_;
+    LOG ($format, @args);
 }
 
 1;
@@ -56,7 +60,11 @@ Memcached::Client::Serializer::Storable - Implements Memcached Serializing using
 
 =head1 VERSION
 
-version 1.07
+version 2.00
+
+=head1 METHODS
+
+=head2 log
 
 =head1 AUTHOR
 

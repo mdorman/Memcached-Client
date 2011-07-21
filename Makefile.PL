@@ -27,7 +27,6 @@ my %WriteMakefileArgs = (
   'PREREQ_PM' => {
     'AnyEvent' => '0',
     'AnyEvent::Handle' => '0',
-    'Carp' => '0',
     'Compress::Zlib' => '0',
     'Config' => '0',
     'Data::Dumper' => '0',
@@ -41,7 +40,7 @@ my %WriteMakefileArgs = (
     'bytes' => '0',
     'constant' => '0'
   },
-  'VERSION' => '1.07',
+  'VERSION' => '2.00',
   'test' => {
     'TESTS' => 't/*.t'
   }

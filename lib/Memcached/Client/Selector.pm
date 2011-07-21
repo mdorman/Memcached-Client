@@ -1,17 +1,26 @@
 package Memcached::Client::Selector;
 BEGIN {
-  $Memcached::Client::Selector::VERSION = '1.07';
+  $Memcached::Client::Selector::VERSION = '2.00';
 }
 # ABSTRACT: Abstract Base Class For Memcached::Client Selector
 
 use strict;
 use warnings;
+use Memcached::Client::Log qw{LOG};
 
 
 sub new {
     my $class = shift;
     my $self = bless {}, $class;
     return $self;
+}
+
+
+sub log {
+    my ($self, $format, @args) = @_;
+    my $prefix = ref $self || $self;
+    $prefix =~ s,Memcached::Client::Selector::,Selector/,;
+    LOG ("$prefix> " . $format, @args);
 }
 
 
@@ -35,7 +44,7 @@ Memcached::Client::Selector - Abstract Base Class For Memcached::Client Selector
 
 =head1 VERSION
 
-version 1.07
+version 2.00
 
 =head1 SYNOPSIS
 
@@ -48,6 +57,11 @@ version 1.07
 =head2 new
 
 C<new()> builds a new object.  It takes no parameters.
+
+=head2 C<log>
+
+Log the specified message with an appropriate prefix derived from the
+class name.
 
 =head2 set_servers
 

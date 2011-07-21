@@ -18,40 +18,40 @@ is ($serializer->deserialize,
     undef,
     '->deserialize should return undef since we gave it nothing to deserialize');
 
-is_deeply ($serializer->serialize ('foo'),
-           {data => 'foo', flags => 0},
+is_deeply ([$serializer->serialize ('foo')],
+           ['foo', 0],
            '->serialize should return the simple tuple since it is so short');
 
-is_deeply ($serializer->deserialize ({data => 'foo', flags => 0}),
-           {data => 'foo', flags => 0},
+is_deeply ([$serializer->deserialize ('foo', 0)],
+           ['foo'],
            '->deserialize should return the same structure since it was not serialized');
 
-is_deeply ($serializer->serialize ('17times3939'),
-           {data => '17times3939', flags => 0},
+is_deeply ([$serializer->serialize ('17times3939')],
+           ['17times3939', 0],
            '->serialize should return the simple tuple since it is so short');
 
-is_deeply ($serializer->deserialize ({data => '17times3939', flags => 0}),
-           {data => '17times3939', flags => 0},
+is_deeply ([$serializer->deserialize ('17times3939', 0)],
+           ['17times3939'],
            '->deserialize should return the same tuple since it was not serialized');
 
 my $longstring = 'a' x 20000;
 
-is_deeply ($serializer->serialize ($longstring),
-           {data => $longstring, flags => 0},
+is_deeply ([$serializer->serialize ($longstring)],
+           [$longstring, 0],
            '->serialize a very long repetitive string');
 
-is_deeply ($serializer->deserialize ({data => $longstring, flags => 0}),
-           {data => $longstring, flags => 0},
+is_deeply ([$serializer->deserialize ($longstring, 0)],
+           [$longstring],
            '->deserialize our very long repetitive string, compare');
 
 my $longref = {longstring => $longstring};
 
-my $longfreeze = nfreeze $longref;
+my $longstorable = nfreeze $longref;
 
-is_deeply ($serializer->serialize ($longref),
-           {data => $longfreeze, flags => 1},
+is_deeply ([$serializer->serialize ($longref)],
+           [$longstorable, 1],
            '->serialize a very long repetitive string inside a ref');
 
-is_deeply ($serializer->deserialize ({data => $longfreeze, flags => 1}),
-           {data => $longref, flags => 1},
+is_deeply ([$serializer->deserialize ($longstorable, 1)],
+           [$longref],
            '->deserialize a very long repetitive string inside a ref, compare');
