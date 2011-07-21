@@ -4,6 +4,7 @@ author:
   - 'Michael Alan Dorman <mdorman@ironicdesign.com>'
 build_requires:
   IO::Socket::INET: 0
+  JSON::XS: 0
   POSIX: 0
   Test::More: 0
 configure_requires:
@@ -24,9 +25,10 @@ requires:
   Data::Dumper: 0
   Exporter: 0
   IO::File: 0
+  JSON: 0
   Module::Load: 0
   Storable: 0
   String::CRC32: 0
   bytes: 0
   constant: 0
-version: 1.05
+version: 1.06
