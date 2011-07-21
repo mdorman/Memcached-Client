@@ -1,6 +1,6 @@
 package Memcached::Client::Protocol::Binary;
 BEGIN {
-  $Memcached::Client::Protocol::Binary::VERSION = '1.01';
+  $Memcached::Client::Protocol::Binary::VERSION = '1.02';
 }
 # ABSTRACT: Implements new binary memcached protocol
 
@@ -323,7 +323,7 @@ Memcached::Client::Protocol::Binary - Implements new binary memcached protocol
 
 =head1 VERSION
 
-version 1.01
+version 1.02
 
 =head1 AUTHOR
 
