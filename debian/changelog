@@ -1,3 +1,9 @@
+memcached-client (2.01-1) unstable; urgency=low
+
+  * Imported Upstream version 2.01
+
+ -- Michael Alan Dorman <mdorman@ironicdesign.com>  Thu, 21 Jul 2011 14:48:20 -0400
+
 memcached-client (2.00-1) unstable; urgency=low
 
   * New upstream release.
