@@ -3,7 +3,7 @@ package t::Memcached::Manager;
 use strict;
 use warnings;
 use IO::Socket::INET qw{};
-use Memcached::Client::Log qw{DEBUG LOG};
+use Memcached::Client::Log qw{DEBUG INFO};
 use POSIX qw{:sys_wait_h};
 use Test::More;
 
@@ -11,7 +11,7 @@ sub new {
     my ($class, @args) = @_;
     my %args = 1 == scalar @args ? %{$args[0]} : @args;
     my $self = bless {}, $class;
-    $self->{memcached} = $args{memcached};
+    $self->{memcached} = $args{memcached} || $ENV{MEMCACHED} || qx{which memcached};
     chomp $self->{memcached};
     note "Using memcached $self->{memcached}";
     map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
@@ -26,21 +26,14 @@ sub start {
 
     my ($host, $port) = split /:/, $server;
 
-    $self->log ("Checking port %s for existing process", $port) if DEBUG;
-    if (my $remote = IO::Socket::INET->new (Proto => 'tcp', PeerAddr => $host, PeerPort => $port)) {
-        close $remote;
-        $self->log ("Already server on %s:%s", $host, $port) if DEBUG;
-        exit;
-    }
-
-    $self->log ("Using port %s", $port) if DEBUG;
+    # DEBUG "Using port %s", $port;
 
     my $pid = fork;
 
     # Fork a new process
     if ($pid) {
         $self->{servers}->{$server} = $pid;
-        $self->log ("Fork successful, pid %s", $self->{servers}->{$server}) if DEBUG;
+        DEBUG "Fork successful, pid %s", $self->{servers}->{$server};
         $self->wait ($host, $port);
         sleep 0.1;
     } elsif (defined $pid) {
@@ -62,10 +55,10 @@ sub wait {
     my $retry = 100;
 
     while ($retry--) {
-        $self->log ("Checking %s:%s", $host, $port) if DEBUG;
+        # DEBUG "Checking %s:%s", $host, $port;
         if (my $remote = IO::Socket::INET->new (Proto => 'tcp', PeerAddr => $host, PeerPort => $port)) {
             close $remote;
-            $self->log ("Connected to %s:%s", $host, $port) if DEBUG;
+            # DEBUG "Connected to %s:%s", $host, $port;
             return 1;
         }
         else {
@@ -81,7 +74,7 @@ sub stop {
     my ($self, $id) = @_;
 
     my $pid = delete $self->{servers}->{$id} or die "No server $id";
-    $self->log ("Pid is %s", $pid) if DEBUG;
+    DEBUG "Pid is %s", $pid;
 
     my $result = 0;
 
@@ -89,11 +82,9 @@ sub stop {
     local $?;
 
     for my $sig (qw{TERM HUP QUIT INT KILL}) {
-        $self->log ("Trying %s", $sig) if DEBUG;
+        DEBUG "Trying %s", $sig;
         kill ($sig, $pid);
-        my $wp = waitpid ($pid, 0);
-        $self->log ("Waitpid returned %s", $wp) if DEBUG;
-        if ($wp == $pid or $wp == -1) {
+        if (waitpid ($pid, 0) == $pid) {
             $result = 1;
             last;
         }
@@ -114,28 +105,12 @@ sub version {
     return $self->{version};
 }
 
-sub vstring {
-    my ($self) = @_;
-    my $version = $self->version;
-    $version =~ s/[^0-9.]//g;
-    return join "", map {sprintf "%03d", $_} split /\./, $version;
-}
-
 sub DESTROY {
     my ($self) = @_;
     for my $server (keys %{$self->{servers}}) {
-        $self->log ("Stopping $server\n") if DEBUG;
+        # DEBUG "Stopping $server\n";
         $self->stop ($server);
     };
-}
-
-=method log
-
-=cut
-
-sub log {
-    my ($self, $format, @args) = @_;
-    LOG ("Manager> " . $format, @args);
 }
 
 1;

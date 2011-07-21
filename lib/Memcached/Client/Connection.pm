@@ -1,207 +1,164 @@
 package Memcached::Client::Connection;
+BEGIN {
+  $Memcached::Client::Connection::VERSION = '0.99';
+}
 # ABSTRACT: Class to manage Memcached::Client server connections
 
 use strict;
 use warnings;
-use AnyEvent qw{};
 use AnyEvent::Handle qw{};
-use Memcached::Client::Log qw{DEBUG LOG};
+use Memcached::Client::Log qw{DEBUG INFO};
+
+
+sub new {
+    my ($class, $server, $preparation) = @_;
+    my $self = bless {prepare => $preparation, queue => [], server => $server}, $class;
+    return $self;
+}
+
+
+sub connect {
+    my ($self) = @_;
+
+    my ($host, $port) = split (/:/, $self->{server});
+    $port ||= 11211;
+
+    # DEBUG "C [%s]: connecting to [%s:%s]", $self->{server}, $host, $port;
+
+    $self->{handle} = AnyEvent::Handle->new (connect => [$host, $port],
+                                             keepalive => 1,
+                                             on_connect => sub {
+                                                 my ($handle, $host, $port) = @_;
+                                                 # DEBUG "C [%s]: connected", $self->{server};
+                                                 $self->dequeue;
+                                             },
+                                             on_error => sub {
+                                                 my ($handle, $fatal, $message) = @_;
+                                                 # DEBUG "C [%s]: %s error %s", $self->{server}, ($fatal ? "fatal" : "non-fatal"), $message;
+                                                 $self->fail;
+                                                 $handle->destroy if ($handle);
+                                                 undef $self->{handle};
+                                             },
+                                             on_prepare => sub {
+                                                 my ($handle) = @_;
+                                                 # DEBUG "C [%s]: preparing handle", $self->{server};
+                                                 $self->{prepare}->($handle);
+                                                 return $self->{connect_timeout} || 5;
+                                             },
+                                             peername => $self->{server});
+}
+
+
+sub enqueue {
+    my ($self, $request, $failback) = @_;
+    $self->connect unless ($self->{handle});
+    # DEBUG "C [%s]: queuing request", $self->{server};
+    push @{$self->{queue}}, {request => $request, failback => $failback};
+    $self->dequeue;
+    return 1;
+}
+
+
+sub dequeue {
+    my ($self) = @_;
+    return if ($self->{executing});
+    # DEBUG "C [%s]: checking for job", $self->{server};
+    return unless ($self->{executing} = shift @{$self->{queue}});
+    # DEBUG "C [%s]: executing", $self->{server};
+    $self->{executing}->{request}->($self->{handle},
+                                    sub {
+                                        # DEBUG "C [%s]: done with request", $self->{server};
+                                        delete $self->{executing};
+                                        $self->dequeue;
+                                    },
+                                    $self->{server});
+}
+
+
+sub fail {
+    my ($self) = @_;
+    # DEBUG "C [%s]: failing requests", $self->{server};
+    if (my $current = delete $self->{executing}) {
+        # DEBUG "C [%s]: failing current", $self->{server};
+        $current->{failback}->();
+    }
+    if (my $current = delete $self->{queue}) {
+        for my $request (@{$current}) {
+            # DEBUG "C [%s]: invoking failback", $self->{server};
+            $request->{failback}->();
+        }
+    }
+    $self->{queue} = [];
+}
+
+1;
+
+__END__
+=pod
+
+=head1 NAME
+
+Memcached::Client::Connection - Class to manage Memcached::Client server connections
+
+=head1 VERSION
+
+version 0.99
 
 =head1 SYNOPSIS
 
   use Memcached::Client::Connection;
   my $connection = Memcached::Client::Connection->new ("server:port");
-  $connection->enqueue ($request);
+  $connection->enqueue ($request->($handle, $callback), $failback);
 
-=head1 DESCRIPTION
+=head1 METHODS
 
-A C<Memcached::Client::Connection> object is responsible for managing
-a connection to a particular memcached server, and a queue of requests
-destined for that server.
+=head2 new
 
-Connections are, by default, made lazily.
+C<new()> builds a new connection object.
 
-The connection handler will try to automatically reconnect several
-times on connection failure, only returning failure responses for all
-queued requests as a last resort.
+Its only parameter is the server specification, in the form of
+"hostname:port".  The object is constructed and returns immediately.
 
-=method new
-
-C<new()> builds a new connection object.  The object is constructed
-and returned immediately.
-
-Takes two parameters: one is the server specification, in the form of
-"hostname" or "hostname:port".  If no port is specified, ":11211" (the
-default memcached port) is appended to the server name.
-
-The other, optional, parameter is a subroutine reference that will be
-invoked on the raw filehandle before connection.  Generally only
-useful for putting the filehandle in binary mode.
-
-No connection is initiated at construction time, because that would
-require that we perhaps accept a callback to signal completion, or
-create a condvar, etc.  Simpler to lazily construct the connection
-when the conditions are already right for doing our asynchronous
-dance.
-
-=cut
-
-sub new {
-    my ($class, $server, $protocol) = @_;
-    die "You must give me a server to connect to.\n" unless ($server);
-    die "You must give me a protocol to use.\n" unless ($protocol);
-    $server .= ":11211" unless 0 < index $server, ':';
-    my $self = {attempts => 0, protocol => $protocol, queue => [], server => $server};
-    bless $self, $class;
-}
-
-=method log
-
-=cut
-
-sub log {
-    my ($self, $format, @args) = @_;
-    LOG ("Connection/%s> " . $format, $self->{server}, @args);
-}
-
-=method connect
+=head2 connect
 
 C<connect()> initiates a connection to the specified server.
 
-If it succeeds in connecting, it will start sending requests for the
-server to satisfy.
+If it succeeds, it will start dequeuing requests for the server to
+satisfy.
 
 If it fails, it will respond to all outstanding requests by invoking
 their failback routine.
 
-=cut
+=head2 enqueue
 
-sub connect {
-    my ($self) = @_;
-    unless ($self->{handle}) {
-        $self->log ("Initiating connection", $self->{server}) if DEBUG;
-        $self->{handle} = AnyEvent::Handle->new (connect => [split /:/, $self->{server}],
-                                                 keepalive => 1,
-                                                 on_connect => sub {
-                                                     $self->log ("Connected") if DEBUG;
-                                                     $self->{attempts} = 0;
-                                                     $self->dequeue;
-                                                 },
-                                                 on_error => sub {
-                                                     my ($handle, $fatal, $message) = @_;
-                                                     $self->log ("Removing handle") if DEBUG;
-                                                     delete $self->{handle};
-                                                     if ($message eq "Broken pipe") {
-                                                         $self->log ("Broken pipe, reconnecting") if DEBUG;
-                                                         $self->connect;
-                                                     } elsif ($message eq "Connection timed out" and ++$self->{attempts} < 5) {
-                                                         $self->log ("Connection timed out, retrying") if DEBUG;
-                                                         $self->connect;
-                                                     } else {
-                                                         $self->log ("Error %s, failing", $message) if DEBUG;
-                                                         $self->fail;
-                                                     }
-                                                 },
-                                                 on_prepare => sub {
-                                                     my ($handle) = @_;
-                                                     $self->log ("Preparing handle") if DEBUG;
-                                                     $self->{protocol}->prepare_handle ($handle) if ($self->{protocol}->can ("prepare_handle"));
-                                                     return $self->{connect_timeout} || 0.5;
-                                                 });
-    }
-}
+C<enqueue()> adds the request specified (request, failback) pair to
+the queue of requests to be processed.
 
-=method disconnect
+=head2 dequeue
 
-C<disconnect> will disconnect any extant handle from the server it is
-connected to, destroy it, and then fail all queued requests.
+C<dequeue()> manages the process of pulling requests off the queue and
+executing them as possible.  Each request is handed the handle for the
+server connection as well as a callback that will mark it as done and
+do the next request.
 
-=cut
+If the request code fails to invoke this callback, processing will
+halt.
 
-sub disconnect {
-    my ($self) = @_;
-
-    $self->log ("Disconnecting") if DEBUG;
-    if (my $handle = delete $self->{handle}) {
-        $self->log ("Shutting down handle") if DEBUG;
-        $handle->destroy();
-    }
-
-    $self->log ("Failing all requests") if DEBUG;
-    $self->fail;
-}
-
-=method enqueue
-
-C<enqueue()> adds the specified request object to the queue of
-requests to be processed, if there is already a request in progress,
-otherwise, it begins execution of the specified request.  If
-necessary, it will initiate connection to the server as well.
-
-=cut
-
-sub enqueue {
-    my ($self, $request) = @_;
-    $self->log ("Request is %s", $request) if DEBUG;
-    push @{$self->{queue}}, $request;
-    $self->dequeue;
-}
-
-=method dequeue
-
-C<dequeue()> checks to see if there's already a request processing,
-and if so, it simply returns (when that request finishes, it will call
-->complete, which will call dequeue).
-
-If nothing is processing, it will attempt to pull the next item from
-the queue and start it processing.
-
-=cut
-
-sub dequeue {
-    my ($self) = @_;
-    if ($self->{handle}) {
-        return if ($self->{executing});
-        if ($self->{executing} = shift @{$self->{queue}}) {
-            $self->log ("Initiating request") if DEBUG;
-            my $command = $self->{executing}->{type};
-            $self->{protocol}->$command ($self, $self->{executing});
-        }
-    } else {
-        $self->connect;
-    }
-}
-
-=method complete
-
-=cut
-
-sub complete {
-    my ($self) = @_;
-    $self->log ("Done with request") if DEBUG;
-    delete $self->{executing};
-    goto &dequeue;
-}
-
-=method fail
+=head2 fail
 
 C<fail()> is called when there is an error on the handle, and it
 invokes the failbacks of all queued requests.
 
+=head1 AUTHOR
+
+Michael Alan Dorman <mdorman@ironicdesign.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2010 by Michael Alan Dorman.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
 =cut
 
-sub fail {
-    my ($self) = @_;
-    $self->log ("Checking for executing request") if DEBUG;
-    if (my $executing = delete $self->{executing}) {
-        $self->log ("Failing executing request %s", $executing) if DEBUG;
-        $executing->result;
-    }
-    $self->log ("Failing requests in queue: %s", $self->{queue}) if DEBUG;
-    while (my $request = shift @{$self->{queue}}) {
-        $self->log ("Failing request %s", $request) if DEBUG;
-        $request->result;
-    }
-}
-
-1;

@@ -2,7 +2,7 @@ package t::Memcached::Mock;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG LOG};
+use Memcached::Client::Log;
 use Module::Load;
 
 sub new {
@@ -15,7 +15,7 @@ sub new {
     $self->{selector}->set_servers ($args{servers});
     $self->{version} = $args{version};
     map {$self->{servers}->{(ref $_ ? $_->[0] : $_)} = {}} @{$args{servers}};
-    $self->log ("Mock cluster is %s", $self) if DEBUG;
+    DEBUG "Mock cluster is %s", $self;
     $self;
 }
 
@@ -36,19 +36,18 @@ sub add {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    $self->log ("add: %s - %s - %s", $server, $index, $value) if DEBUG;
+    DEBUG "M: add: %s - %s - %s", $server, $index, $value;
     return 0 if (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} = $value;
     return 1;
 }
 
 sub add_multi {
-    my ($self, @tuples) = @_;
+    my ($self, $tuples) = @_;
     my (%rv);
-    for my $tuple (@tuples) {
+    for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        my $value = $self->add (@{$tuple});
-        $rv{$key} = $value if defined $value;
+        $rv{$key} = $self->add (@{$tuple});
     }
     return \%rv;
 }
@@ -59,35 +58,30 @@ sub append {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    $self->log ("append: %s - %s - %s", $server, $index, $value) if DEBUG;
+    DEBUG "M: append: %s - %s - %s", $server, $index, $value;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} .= $value;
     return 1;
 }
 
 sub append_multi {
-    my ($self, @tuples) = @_;
+    my ($self, $tuples) = @_;
     my (%rv);
-    for my $tuple (@tuples) {
+    for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        my $value = $self->append (@{$tuple});
-        $rv{$key} = $value if defined $value;
+        $rv{$key} = $self->append (@{$tuple});
     }
     return \%rv;
 }
 
-sub connect {
-    return 1;
-}
-
 sub decr {
     my ($self, $key, $delta, $initial) = @_;
-    $delta = 1 unless defined $delta;
+    $delta //= 1;
     return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    $self->log ("decr: %s - %s - %s", $server, $index, $delta) if DEBUG;
+    DEBUG "M: decr: %s - %s - %s", $server, $index, $delta;
     if (defined $self->{servers}->{$server}->{$index}) {
         if ($self->{servers}->{$server}->{$index} =~ m/^\d+$/) {
             $delta = $self->{servers}->{$server}->{$index} if ($delta > $self->{servers}->{$server}->{$index});
@@ -102,12 +96,11 @@ sub decr {
 }
 
 sub decr_multi {
-    my ($self, @tuples) = @_;
+    my ($self, $tuples) = @_;
     my (%rv);
-    for my $tuple (@tuples) {
-        my ($key) = ref $tuple ? @{$tuple} : $tuple;
-        my $value = $self->decr (ref $tuple ? @{$tuple} : $tuple);
-        $rv{$key} = $value if defined $value;
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->decr (@{$tuple});
     }
     return \%rv;
 }
@@ -118,7 +111,7 @@ sub delete {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    $self->log ("delete: %s - %s", $server, $index) if DEBUG;
+    DEBUG "M: delete: %s - %s", $server, $index;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     delete $self->{servers}->{$server}->{$index};
     return 1;
@@ -128,8 +121,7 @@ sub delete_multi {
     my ($self, @keys) = @_;
     my (%rv);
     for my $key (@keys) {
-        my $value = $self->delete ($key);
-        $rv{$key} = $value if defined $value;
+        $rv{$key} = $self->delete ($key);
     }
     return \%rv;
 }
@@ -137,7 +129,7 @@ sub delete_multi {
 sub flush_all {
     my ($self) = @_;
     map {
-        $self->log ("flush_all: %s", $_) if DEBUG;
+        DEBUG "M: flush_all: %s", $_;
         $self->{servers}->{$_} = {};
     } keys %{$self->{servers}};
     return {map {$_ => 1} keys %{$self->{servers}}};
@@ -149,38 +141,34 @@ sub get {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    $self->log ("get: %s - %s", $server, $index) if DEBUG;
-    if (length $index > 250) {
-        return undef;
-    } else {
-        return $self->{servers}->{$server}->{$index};
-    }
+    DEBUG "M: get: %s - %s", $server, $index;
+    return $self->{servers}->{$server}->{$index};
 }
 
 sub get_multi {
-    my ($self, @keys) = @_;
-    return {} unless (@keys);
+    my ($self, $keys) = @_;
+    return {} unless (defined $keys and ref $keys eq "ARRAY" and @{$keys});
     my %rv;
-    for my $key (@keys) {
+    for my $key (@{$keys}) {
         next unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
         my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or next;
         my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
         next unless (defined $self->{servers}->{$server});
-        $self->log ("get: %s - %s", $server, $index) if DEBUG;
+        DEBUG "M: get: %s - %s", $server, $index;
         next unless (defined $self->{servers}->{$server}->{$index});
-        $rv{ref $key ? $key->[1] : $key} = length $index > 250 ? undef : $self->{servers}->{$server}->{$index};
+        $rv{ref $key ? $key->[1] : $key} = $self->{servers}->{$server}->{$index};
     }
     return \%rv;
 }
 
 sub incr {
     my ($self, $key, $delta, $initial) = @_;
-    $delta = 1 unless defined $delta;
+    $delta //= 1;
     return unless (defined $key and (ref $key and $key->[0] and $key->[1]) || (length $key and -1 == index $key, " "));
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return unless (defined $self->{servers}->{$server});
-    $self->log ("incr: %s - %s - %s", $server, $index, $delta) if DEBUG;
+    DEBUG "M: incr: %s - %s - %s", $server, $index, $delta;
     if (defined $self->{servers}->{$server}->{$index}) {
         if ($self->{servers}->{$server}->{$index} =~ m/^\d+$/) {
             $self->{servers}->{$server}->{$index} += $delta;
@@ -194,12 +182,11 @@ sub incr {
 }
 
 sub incr_multi {
-    my ($self, @tuples) = @_;
+    my ($self, $tuples) = @_;
     my (%rv);
-    for my $tuple (@tuples) {
-        my ($key) = ref $tuple ? @{$tuple} : $tuple;
-        my $value = $self->incr (ref $tuple ? @{$tuple} : $tuple);
-        $rv{$key} = $value if defined $value;
+    for my $tuple (@{$tuples}) {
+        my ($key) = @{$tuple};
+        $rv{$key} = $self->incr (@{$tuple});
     }
     return \%rv;
 }
@@ -217,19 +204,18 @@ sub prepend {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    $self->log ("prepend: %s - %s - %s", $server, $index, $value) if DEBUG;
+    DEBUG "M: prepend: %s - %s - %s", $server, $index, $value;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} = $value . $self->{servers}->{$server}->{$index};
     return 1;
 }
 
 sub prepend_multi {
-    my ($self, @tuples) = @_;
+    my ($self, $tuples) = @_;
     my (%rv);
-    for my $tuple (@tuples) {
+    for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        my $value = $self->prepend (@{$tuple});
-        $rv{$key} = $value if defined $value;
+        $rv{$key} = $self->prepend (@{$tuple});
     }
     return \%rv;
 }
@@ -240,19 +226,18 @@ sub replace {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    $self->log ("replace: %s - %s - %s", $server, $index, $value) if DEBUG;
+    DEBUG "M: replace: %s - %s - %s", $server, $index, $value;
     return 0 unless (defined $self->{servers}->{$server}->{$index});
     $self->{servers}->{$server}->{$index} = $value;
     return 1;
 }
 
 sub replace_multi {
-    my ($self, @tuples) = @_;
+    my ($self, $tuples) = @_;
     my (%rv);
-    for my $tuple (@tuples) {
+    for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        my $value = $self->replace (@{$tuple});
-        $rv{$key} = $value if defined $value;
+        $rv{$key} = $self->replace (@{$tuple});
     }
     return \%rv;
 }
@@ -263,22 +248,17 @@ sub set {
     my $server = $self->{selector}->get_server ($key, $self->{hash_namespace} ? $self->{namespace} : "") or return;
     my $index = $self->{namespace} . (ref $key ? $key->[1] : $key);
     return 0 unless (defined $self->{servers}->{$server});
-    $self->log ("set: %s - %s - %s", $server, $index, $value) if DEBUG;
-    if (length $index > 250) {
-        return 0;
-    } else {
-        $self->{servers}->{$server}->{$index} = $value;
-        return 1;
-    }
+    DEBUG "M: set: %s - %s - %s", $server, $index, $value;
+    $self->{servers}->{$server}->{$index} = $value;
+    return 1;
 }
 
 sub set_multi {
-    my ($self, @tuples) = @_;
+    my ($self, $tuples) = @_;
     my (%rv);
-    for my $tuple (@tuples) {
+    for my $tuple (@{$tuples}) {
         my ($key) = @{$tuple};
-        my $value = $self->set (@{$tuple});
-        $rv{$key} = $value if defined $value;
+        $rv{$key} = $self->set (@{$tuple});
     }
     return \%rv;
 }
@@ -309,26 +289,16 @@ sub stop {
     my ($self, $server) = @_;
     delete $self->{servers}->{$server};
     # $self->{servers}->{$server} = undef;
-    $self->log ("Deleted %s, result %s", $server, $self) if DEBUG;
+    DEBUG "Deleted %s, result %s", $server, $self;
     return 1;
 }
 
 sub version {
     my ($self) = @_;
     return {map {
-        $self->log ("version: %s", $_) if DEBUG;
+        DEBUG "M: version: %s", $_;
         $_ => defined $self->{servers}->{$_} ? $self->{version} : undef
     } keys %{$self->{servers}}};
 }
-
-=method log
-
-=cut
-
-sub log {
-    my ($self, $format, @args) = @_;
-    LOG ("Mock> " . $format, @args);
-}
-
 
 1;
