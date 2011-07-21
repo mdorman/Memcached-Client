@@ -1,6 +1,6 @@
 package Memcached::Client::Selector::Traditional;
 BEGIN {
-  $Memcached::Client::Selector::Traditional::VERSION = '1.02';
+  $Memcached::Client::Selector::Traditional::VERSION = '1.03';
 }
 #ABSTRACT: Implements Traditional Memcached Hashing
 
@@ -64,7 +64,7 @@ Memcached::Client::Selector::Traditional - Implements Traditional Memcached Hash
 
 =head1 VERSION
 
-version 1.02
+version 1.03
 
 =head1 SYNOPSIS
 

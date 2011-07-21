@@ -1,6 +1,6 @@
 package Memcached::Client;
 BEGIN {
-  $Memcached::Client::VERSION = '1.02';
+  $Memcached::Client::VERSION = '1.03';
 }
 # ABSTRACT: All-singing, all-dancing Perl client for Memcached
 
@@ -108,6 +108,41 @@ sub set_servers {
     }
 
     return 1;
+}
+
+
+sub connect {
+    my ($self, @args) = @_;
+
+    DEBUG "C [connect]: Starting connection";
+
+    my ($callback, $cmd_cv);
+    if (ref $args[$#args] eq 'AnyEvent::CondVar') {
+        $cmd_cv = pop @args;
+        DEBUG "C [connect]: Found condvar";
+        cluck "You gave us a condvar but are also expecting a return value" if (defined wantarray);
+    } elsif (ref $args[$#args] eq 'CODE') {
+        $callback = pop @args;
+        DEBUG "C [connect]: Found callback";
+        cluck "You declared a callback but are also expecting a return value" if (defined wantarray);
+    }
+
+    $cmd_cv ||= AE::cv;
+    $cmd_cv->cb (sub {$callback->($cmd_cv->recv)}) if ($callback);
+
+    $cmd_cv->begin (sub {$_[0]->send (1)});
+    for my $server (keys %{$self->{servers}}) {
+        DEBUG "C [connect]: Connecting %s", $server;
+        $cmd_cv->begin;
+        $self->{servers}->{$server}->connect (sub {
+                                                  DEBUG "C [connect]: Done connecting %s", $server;
+                                                  $cmd_cv->end
+                                              });
+    }
+    $cmd_cv->end;
+
+    DEBUG "C: %s", $callback ? "using callback" : "using condvar";
+    $cmd_cv->recv unless ($callback or ($cmd_cv eq $_[$#_]));
 }
 
 
@@ -626,7 +661,7 @@ Memcached::Client - All-singing, all-dancing Perl client for Memcached
 
 =head1 VERSION
 
-version 1.02
+version 1.03
 
 =head1 SYNOPSIS
 
@@ -802,6 +837,15 @@ Preprocess keys before they are transmitted.
 =head2 set_servers()
 
 Change the list of servers to the listref handed to the function.
+
+=head2 connect()
+
+Immediately initate connections to all servers.
+
+While connections are implicitly made upon first need, and thus are
+invisible to the user, it is sometimes helpful to go ahead and start
+connections to all servers at once.  Calling C<connect()> will do
+this.
 
 =head2 disconnect()
 

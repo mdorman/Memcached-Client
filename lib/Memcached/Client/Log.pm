@@ -1,6 +1,6 @@
 package Memcached::Client::Log;
 BEGIN {
-  $Memcached::Client::Log::VERSION = '1.02';
+  $Memcached::Client::Log::VERSION = '1.03';
 }
 # ABSTRACT: Logging support for Memcached::Client
 
@@ -20,7 +20,7 @@ BEGIN {
 
     if (exists $ENV{MCTEST} and $ENV{MCTEST}) {
         $ENV{MCDEBUG} = 1;
-        open $log, "+>>,,debug.log" or die "Couldn't open ,,debug.log";
+        open $log, ">>", ",,debug.log" or die "Couldn't open ,,debug.log";
         $log->autoflush (1);
     }
 
@@ -56,7 +56,7 @@ Memcached::Client::Log - Logging support for Memcached::Client
 
 =head1 VERSION
 
-version 1.02
+version 1.03
 
 =head1 SYNOPSIS
 

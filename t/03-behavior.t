@@ -8,7 +8,10 @@ use t::Memcached::Mock qw{};
 use t::Memcached::Servers qw{};
 use Test::More;
 
-my @tests = (['version',
+my @tests = (['connect', 1,
+              '->connect'],
+
+             ['version',
               'Checking for version on all servers'],
 
              ['set',
@@ -188,6 +191,7 @@ for my $async (0..1) {
     for my $protocol qw(Text Binary) {
         for my $selector qw(Traditional) {
             note sprintf "running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
+            DEBUG "running %s/%s %s", $selector, $protocol, $async ? "asynchronous" : "synchronous";
             my $namespace = join ('.', time, $$, '');
             isa_ok (my $client = Memcached::Client->new (namespace => $namespace, protocol => $protocol, selector => $selector, servers => $servers->servers), 'Memcached::Client', "Get memcached client");
             isa_ok (my $mock = t::Memcached::Mock->new (namespace => $namespace, selector => $selector, servers => $servers->servers, version => $manager->version), 't::Memcached::Mock', "Get mock memcached client");
