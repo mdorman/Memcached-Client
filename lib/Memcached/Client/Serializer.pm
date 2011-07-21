@@ -1,6 +1,6 @@
 package Memcached::Client::Serializer;
 BEGIN {
-  $Memcached::Client::Serializer::VERSION = '1.03';
+  $Memcached::Client::Serializer::VERSION = '1.04';
 }
 #ABSTRACT: Abstract Base Class For Memcached::Client Serializer
 
@@ -35,7 +35,7 @@ Memcached::Client::Serializer - Abstract Base Class For Memcached::Client Serial
 
 =head1 VERSION
 
-version 1.03
+version 1.04
 
 =head1 SYNOPSIS
 

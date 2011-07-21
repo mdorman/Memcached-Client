@@ -1,9 +1,3 @@
- * Allow library clients to initiate greedy rather than lazy
-   connection handling.
-
-   This would, I think, require significant changes to ::Connection,
-   in order to support being called with a callback.
-
  * Allow unix sockets (just needs some recognition of the format of
    args)
 

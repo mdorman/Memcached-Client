@@ -2,7 +2,7 @@ package t::Memcached::Servers;
 
 use strict;
 use warnings;
-use Memcached::Client::Log qw{DEBUG INFO};
+use Memcached::Client::Log qw{DEBUG};
 
 # Minimum 2, up to 10
 use constant SERVERS => int (rand (9) + 2);
@@ -16,7 +16,7 @@ sub new {
         my $weight = int (rand (3) + 1);
         push @{$self->{servers}}, $weight > 1 ? [$host, $weight] : $host;
     }
-    # DEBUG "servers: %s", $self->{servers};
+    DEBUG "servers: %s", $self->{servers};
     $self;
 }
 
@@ -24,7 +24,7 @@ sub error {
     my ($self) = @_;
     my $choice = int (rand (scalar @{$self->{servers}}));
     my $server = ref $self->{servers}->[$choice] ? $self->{servers}->[$choice]->[0] : $self->{servers}->[$choice];
-    # DEBUG "Choice is #%s, %s", $choice, $server;
+    DEBUG "Choice is #%s, %s", $choice, $server;
     return $server;
 }
 

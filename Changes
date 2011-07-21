@@ -1,3 +1,11 @@
+v1.04
+
+ * Make some diagnostics more helpful
+ * Don't (knowingly) allow invalid requests
+ * Fix a couple of the binary protocol's methods that could have returned values from errors
+ * Rework testing to be much more robust
+ * General cleanup
+
 v1.03
 
  * Silence our perlcritic warning.
