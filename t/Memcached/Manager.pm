@@ -114,6 +114,13 @@ sub version {
     return $self->{version};
 }
 
+sub vstring {
+    my ($self) = @_;
+    my $version = $self->version;
+    $version =~ s/[^0-9.]//g;
+    return join "", map {sprintf "%03d", $_} split /\./, $version;
+}
+
 sub DESTROY {
     my ($self) = @_;
     for my $server (keys %{$self->{servers}}) {
